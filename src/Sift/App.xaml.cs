@@ -30,8 +30,23 @@ public partial class App : Application
         MainWindow = window;
         window.Show();
 
-        if (_smoke is not null) _smoke.Run(vm, window);
+        int ut = Array.IndexOf(e.Args, "--update-test");
+        if (ut >= 0 && ut + 1 < e.Args.Length) RunUpdateTest(vm, e.Args[ut + 1]);
+        else if (_smoke is not null) _smoke.Run(vm, window);
         else vm.OnStartup();
+    }
+
+    /// <summary>CI: an old build checks for, downloads, verifies and installs the latest release.</summary>
+    private static async void RunUpdateTest(MainViewModel vm, string log)
+    {
+        void W(string l) { try { File.AppendAllText(log, l + Environment.NewLine); } catch { } }
+        W($"running {Updater.CurrentVersionText} from {Environment.ProcessPath}");
+        await vm.Update.CheckAsync(manual: true);
+        W($"check: {vm.Update.State} {vm.Update.StatusText}");
+        if (vm.Update.State != UpdateState.Available) { Current.Shutdown(1); return; }
+        await vm.Update.InstallAsync(); // on success this relaunches the new exe and shuts down
+        W($"install: {vm.Update.State} {vm.Update.StatusText}");
+        if (vm.Update.State == UpdateState.Error) Current.Shutdown(1);
     }
 
     private void OnUnhandled(object sender, DispatcherUnhandledExceptionEventArgs e)

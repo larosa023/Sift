@@ -50,6 +50,23 @@ jobs:
           if (Test-Path $crash) { Write-Host '--- crash.log ---'; Get-Content $crash }
           if ($p.ExitCode -ne 0 -or -not (Select-String -Path $log -Pattern 'SMOKE OK' -Quiet)) { throw "Smoke test failed (exit $($p.ExitCode))" }
 
+      - name: Updater test (old build updates itself to the latest release)
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          dotnet publish src/Sift/Sift.csproj -c Release -r win-x64 -o old -p:Version=0.0.1 | Out-Null
+          $log = Join-Path $env:RUNNER_TEMP 'update.log'
+          $exe = (Resolve-Path old/Sift.exe).Path
+          $p = Start-Process $exe -ArgumentList '--update-test', "`"$log`"" -PassThru
+          $p.WaitForExit(300000) | Out-Null
+          Start-Sleep -Seconds 8
+          Get-Content $log
+          $v = (Get-Item $exe).VersionInfo.ProductVersion
+          Write-Host "old/Sift.exe is now version $v"
+          Get-Process Sift -ErrorAction SilentlyContinue | Stop-Process -Force
+          if ($v -like '0.0.1*') { throw 'Updater did not replace the exe' }
+
       - name: Checksum
         shell: pwsh
         run: |
