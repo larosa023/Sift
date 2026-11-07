@@ -40,12 +40,7 @@ dotnet publish src/Sift -c Release -r win-x64 -o out
 
 ## Releasing
 
-Push a version tag and GitHub Actions builds the exe, computes its checksum and publishes the release that the in-app updater reads:
-
-```powershell
-git tag v1.1.0
-git push origin v1.1.0
-```
+Bump `<Version>` in `src/Sift/Sift.csproj` and push to `main`. GitHub Actions builds the exe, smoke-tests it, computes its checksum and — if that version has no release yet — publishes `v<Version>`, which the in-app updater picks up. (Pushing a `v*` tag also works.)
 
 The release must include `Sift.exe` and `Sift.exe.sha256` (the workflow handles both).
 
