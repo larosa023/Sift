@@ -127,7 +127,10 @@ internal sealed class SmokeTest
             var sw = Stopwatch.StartNew();
             await vm.Overview.ScanAsync(_folder);
             Check(vm.Overview.Root is not null && vm.Overview.Error is null, $"scan {_folder}: {vm.Overview.ScanSummary} {vm.Overview.Error}");
-            Write($"     scan took {sw.ElapsedMilliseconds} ms");
+            Write($"     scan took {sw.ElapsedMilliseconds} ms (cold)");
+            sw.Restart();
+            await vm.Overview.ScanAsync(_folder);
+            Write($"     rescan took {sw.ElapsedMilliseconds} ms (warm) · {vm.Overview.ScanSummary}");
             await Settle();
             var firstDir = vm.Overview.Root!.Children?.FirstOrDefault(c => c.IsDirectory);
             if (firstDir is not null) { vm.Overview.NavigateTo(firstDir); await Settle(); vm.Overview.UpCommand.Execute(null); await Settle(); }
