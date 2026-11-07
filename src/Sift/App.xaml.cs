@@ -134,9 +134,18 @@ internal sealed class SmokeTest
             foreach (var p in Enum.GetValues<Page>()) { vm.CurrentPage = p; await Settle(); }
             Check(true, "all pages rendered");
 
-            ThemeManager.Apply(Core.ThemeMode.Light, "#14B8A6"); await Settle();
-            ThemeManager.Apply(Core.ThemeMode.Dark, "#6366F1"); await Settle();
-            Check(true, "theme switching");
+            vm.CurrentPage = Page.Settings;
+            foreach (var t in vm.SettingsPage.Themes)
+            {
+                vm.SettingsPage.SelectTheme(t.Id);
+                await Settle();
+                Check(ThemeManager.CurrentThemeId == t.Id, $"theme {t.Id}");
+            }
+            foreach (var a in vm.SettingsPage.Accents) { a.IsSelected = true; await Settle(); }
+            Check(true, "all accents incl. Windows accent");
+            vm.SettingsPage.SelectTheme("dark");
+            vm.SettingsPage.Accents[1].IsSelected = true;
+            await Settle();
 
             vm.CurrentPage = Page.Overview;
             var sw = Stopwatch.StartNew();
@@ -150,6 +159,42 @@ internal sealed class SmokeTest
             var firstDir = vm.Overview.Root!.Children?.FirstOrDefault(c => c.IsDirectory);
             if (firstDir is not null) { vm.Overview.NavigateTo(firstDir); await Settle(); vm.Overview.UpCommand.Execute(null); await Settle(); }
             Check(true, "treemap navigation");
+
+            var ov = vm.Overview;
+            int all = ov.Rows.Count;
+            ov.SortBy(Sift.ViewModels.SortKey.Name); await Settle();
+            Check(ov.Rows.Count == all && ov.NameHeader.Contains('↑'), "sort by name");
+            ov.SortBy(Sift.ViewModels.SortKey.Size); await Settle();
+            ov.Mode = Sift.ViewModels.ListMode.LargestFiles; await Settle();
+            Check(ov.Rows.Count > 0 && ov.Rows.All(r => !r.IsDirectory), $"largest files mode ({ov.Rows.Count} rows, biggest {ov.Rows.FirstOrDefault()?.SizeText})");
+            ov.FilterText = ".dll";
+            await Task.Delay(400); await Settle();
+            Check(ov.Rows.All(r => r.Name.Contains(".dll", StringComparison.OrdinalIgnoreCase)), $"filter ({ov.Rows.Count} matches)");
+            var csv = Path.Combine(Path.GetTempPath(), "sift-smoke.csv");
+            ov.ExportTo(csv);
+            Check(File.Exists(csv) && File.ReadAllLines(csv).Length == ov.Rows.Count + 1, "CSV export");
+            ov.FilterText = ""; ov.Mode = Sift.ViewModels.ListMode.Contents;
+            await Task.Delay(400); await Settle();
+            if (ov.Categories.Count > 0)
+            {
+                ov.HighlightCommand.Execute(ov.Categories[0]); await Settle();
+                Check(ov.HasHighlight && ov.Categories.Skip(1).All(c => c.IsDimmed), "legend highlight");
+                Check(ov.ClearOne() && !ov.HasHighlight, "Esc clears highlight");
+            }
+
+            // Exclusions: skip the first sub-folder and rescan.
+            var skip = ov.Root!.Children!.FirstOrDefault(c => c.IsDirectory && c.FileCount > 0);
+            if (skip is not null)
+            {
+                var skipPath = skip.FullPath;
+                long before = ov.Root.FileCount;
+                vm.SettingsPage.AddExclusion(skipPath);
+                await ov.ScanAsync(_folder);
+                Check(ov.Root!.Find(skipPath) is null && ov.Root.FileCount < before, $"exclusion skips {skipPath}");
+                vm.SettingsPage.RemoveExclusionCommand.Execute(skipPath);
+                await ov.ScanAsync(_folder);
+            }
+            Check(vm.Settings.RecentScans.Contains(_folder), "recent scans recorded");
 
             vm.CurrentPage = Page.Cleanup;
             await vm.Cleanup.RunAllAsync();
@@ -178,6 +223,10 @@ internal sealed class SmokeTest
             Write($"     review result: {vm.Review.ResultText} / {item?.StatusText}");
             Check(!File.Exists(tmp), "file moved to Recycle Bin");
             try { Directory.Delete(tmpDir, true); } catch { /* ignore */ }
+
+            var (binSize, binItems) = Native.RecycleBinInfo();
+            Write($"     recycle bin: {binItems} items, {Format.Bytes(binSize)} · {vm.Review.RecycleBinText}");
+            Check(binItems > 0, "Recycle Bin size query");
 
             vm.CurrentPage = Page.Settings;
             await vm.Update.CheckAsync(manual: true);

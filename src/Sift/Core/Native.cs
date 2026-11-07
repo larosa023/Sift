@@ -77,6 +77,69 @@ internal static class Native
         catch { /* Windows 10 */ }
     }
 
+    // ---- Recycle Bin ----
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SHQUERYRBINFO
+    {
+        public int cbSize;
+        public long i64Size;
+        public long i64NumItems;
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern int SHQueryRecycleBin(string? pszRootPath, ref SHQUERYRBINFO pSHQueryRBInfo);
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern int SHEmptyRecycleBin(IntPtr hwnd, string? pszRootPath, uint dwFlags);
+
+    /// <summary>Total size and item count across all drives' Recycle Bins.</summary>
+    public static (long Size, long Items) RecycleBinInfo()
+    {
+        try
+        {
+            var info = new SHQUERYRBINFO { cbSize = Marshal.SizeOf<SHQUERYRBINFO>() };
+            if (SHQueryRecycleBin(null, ref info) == 0) return (info.i64Size, info.i64NumItems);
+        }
+        catch { /* ignore */ }
+        return (0, 0);
+    }
+
+    /// <summary>Empties every Recycle Bin. Windows shows its own confirmation. Returns true if it was emptied.</summary>
+    public static bool EmptyRecycleBin(IntPtr owner) => SHEmptyRecycleBin(owner, null, 0) == 0;
+
+    // ---- Taskbar flash ----
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FLASHWINFO
+    {
+        public uint cbSize;
+        public IntPtr hwnd;
+        public uint dwFlags;
+        public uint uCount;
+        public uint dwTimeout;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool FlashWindowEx(ref FLASHWINFO pwfi);
+
+    /// <summary>Flashes the taskbar button until the window comes to the foreground.</summary>
+    public static void FlashUntilFocused(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return;
+        try
+        {
+            var fi = new FLASHWINFO
+            {
+                cbSize = (uint)Marshal.SizeOf<FLASHWINFO>(),
+                hwnd = hwnd,
+                dwFlags = 0x2 | 0xC, // FLASHW_TRAY | FLASHW_TIMERNOFG
+                uCount = 5,
+                dwTimeout = 0,
+            };
+            FlashWindowEx(ref fi);
+        }
+        catch { /* ignore */ }
+    }
+
     public static bool IsElevated()
     {
         try

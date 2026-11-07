@@ -19,6 +19,13 @@
                         <TextBlock Text="Run all checks" Margin="8,0,0,0"/>
                     </StackPanel>
                 </Button>
+                <Button HorizontalAlignment="Stretch" Margin="0,8,0,0" Command="{Binding QueueAllSuggestedCommand}"
+                        ToolTip="Adds every item marked as suggested (safe caches, installers, duplicate copies) to Review">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Style="{StaticResource Glyph}" Text="&#xE710;" FontSize="12"/>
+                        <TextBlock Text="{Binding SuggestedText}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Button>
             </StackPanel>
 
             <ListBox ItemsSource="{Binding Finders}" SelectedItem="{Binding Selected}" Background="Transparent" BorderThickness="0"

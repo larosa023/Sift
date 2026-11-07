@@ -33,6 +33,13 @@ public sealed class TreemapControl : FrameworkElement
         nameof(LayoutVersion), typeof(int), typeof(TreemapControl),
         new FrameworkPropertyMetadata(0, (d, _) => ((TreemapControl)d).Relayout()));
 
+    public static readonly DependencyProperty HighlightProperty = DependencyProperty.Register(
+        nameof(Highlight), typeof(FileCategory?), typeof(TreemapControl),
+        new FrameworkPropertyMetadata(null, (d, _) => ((TreemapControl)d).Relayout()));
+
+    /// <summary>When set, files of other categories are drawn muted so this type stands out.</summary>
+    public FileCategory? Highlight { get => (FileCategory?)GetValue(HighlightProperty); set => SetValue(HighlightProperty, value); }
+
     public FileNode? Root { get => (FileNode?)GetValue(RootProperty); set => SetValue(RootProperty, value); }
     public FileNode? Selected { get => (FileNode?)GetValue(SelectedProperty); set => SetValue(SelectedProperty, value); }
     public FileNode? Hovered { get => (FileNode?)GetValue(HoveredProperty); set => SetValue(HoveredProperty, value); }
@@ -98,7 +105,8 @@ public sealed class TreemapControl : FrameworkElement
                     Res("TreemapFolderBrush", Brushes.DimGray),
                     new Pen(Res("TreemapFolderLineBrush", Brushes.Black), 1),
                     Res("TreemapLabelBrush", Brushes.White),
-                    VisualTreeHelper.GetDpi(this).PixelsPerDip);
+                    VisualTreeHelper.GetDpi(this).PixelsPerDip,
+                    Res("TrackBrush", Brushes.Gray));
                 ctx.FolderPen.Freeze();
                 DrawNode(ctx, root, bounds, 0);
             }
@@ -106,7 +114,7 @@ public sealed class TreemapControl : FrameworkElement
         DrawOverlay();
     }
 
-    private sealed record DrawCtx(DrawingContext Dc, Brush FolderBrush, Pen FolderPen, Brush LabelBrush, double Dpi);
+    private sealed record DrawCtx(DrawingContext Dc, Brush FolderBrush, Pen FolderPen, Brush LabelBrush, double Dpi, Brush MutedBrush);
 
     private static readonly Pen CellPen = CreateCellPen();
     private static Pen CreateCellPen()
@@ -127,8 +135,10 @@ public sealed class TreemapControl : FrameworkElement
 
         if (!node.IsDirectory)
         {
-            dc.DrawRectangle(CategoryPalette.CushionBrush(node.Category), r.Width > 3 && r.Height > 3 ? CellPen : null, r);
-            if (r.Width > 70 && r.Height > 34)
+            var hl = Highlight;
+            bool muted = hl is not null && node.Category != hl.Value;
+            dc.DrawRectangle(muted ? ctx.MutedBrush : CategoryPalette.CushionBrush(node.Category), r.Width > 3 && r.Height > 3 ? CellPen : null, r);
+            if (!muted && r.Width > 70 && r.Height > 34)
             {
                 DrawText(dc, node.Name, r.X + 6, r.Y + 5, r.Width - 12, 11.5, FileLabel, _typefaceBold, ctx.Dpi);
                 DrawText(dc, Format.Bytes(node.Size), r.X + 6, r.Y + 20, r.Width - 12, 10.5, FileLabelDim, _typeface, ctx.Dpi);

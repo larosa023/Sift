@@ -156,6 +156,9 @@ public sealed class CleanupViewModel : ObservableObject
         AddToReviewCommand = new RelayCommand(AddSelectedToReview, () => Selected.SelectedCount > 0);
         OpenCommand = new RelayCommand(p => { if (p is CleanupItem i) FsUtil.OpenInExplorer(i.Path); });
         AddOneCommand = new RelayCommand(p => { if (p is CleanupItem i) Queue(new[] { i }); });
+        QueueAllSuggestedCommand = new RelayCommand(
+            () => Queue(Finders.SelectMany(f => f.Items).Where(i => i.Suggested && !i.IsQueued).ToList()),
+            () => Finders.Any(f => f.Items.Any(i => i.Suggested && !i.IsQueued)));
     }
 
     public ObservableCollection<FinderViewModel> Finders { get; }
@@ -174,6 +177,16 @@ public sealed class CleanupViewModel : ObservableObject
     public ICommand AddToReviewCommand { get; }
     public ICommand OpenCommand { get; }
     public ICommand AddOneCommand { get; }
+    public ICommand QueueAllSuggestedCommand { get; }
+
+    public string SuggestedText
+    {
+        get
+        {
+            var items = Finders.SelectMany(f => f.Items).Where(i => i.Suggested && !i.IsQueued).ToList();
+            return items.Count == 0 ? "Queue suggested" : $"Queue {items.Count} suggested · {Format.Bytes(items.Sum(i => i.Size))}";
+        }
+    }
 
     public string Summary
     {
@@ -186,7 +199,7 @@ public sealed class CleanupViewModel : ObservableObject
         }
     }
 
-    private void RaiseSummary() => Raise(nameof(Summary));
+    private void RaiseSummary() => Raise(nameof(Summary), nameof(SuggestedText));
 
     public async Task RunAllAsync()
     {
@@ -218,6 +231,8 @@ public sealed class CleanupViewModel : ObservableObject
             });
             i.IsSelected = false;
         }
+        RaiseSummary();
+        RelayCommand.Refresh();
     }
 
     public void ApplyDeletions(IReadOnlyList<ReviewItem> deleted)
@@ -229,5 +244,6 @@ public sealed class CleanupViewModel : ObservableObject
             if (paths.Count > 0) f.RemovePaths(paths);
             if (contents.Count > 0) f.RemovePaths(contents);
         }
+        RaiseSummary();
     }
 }

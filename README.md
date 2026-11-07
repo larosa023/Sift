@@ -18,7 +18,13 @@ Nothing is deleted until you review it. Items go to the **Recycle Bin** by defau
 - Squarified, nested treemap with category colours; double-click to zoom, Backspace or mouse-back to go up
 - Folder contents list with share bars, kept in sync with the treemap
 - Review queue: everything from the treemap and every cleanup check lands here before anything is removed
-- Light, dark and "match Windows" themes with eight accent colours
+- Ten themes — Light, Dark, Midnight, Graphite, Mocha, Forest, Fjord, Paper, Frost, High contrast — or match Windows, plus accent colours including your Windows accent
+- Filter and sort the folder list, switch to **Largest files** for the biggest files anywhere below a folder, and export either view to CSV
+- Click a file type in the legend to highlight it across the treemap
+- Recent folders, drag-and-drop a folder to scan it, and folders you can skip in every scan
+- Taskbar progress while scanning; the taskbar flashes when a scan finishes in the background
+- Recycle Bin size, Open and Empty right in Review (recycled files keep using space until it's emptied)
+- Keyboard shortcuts: Ctrl+1–4 pages, F5 rescan, Ctrl+F filter, Enter zoom, Backspace up, Delete add to review, Ctrl+E show in Explorer, Esc clear
 - Built-in updater backed by GitHub Releases, with SHA-256 verification
 - Single self-contained `Sift.exe` — no installer, no .NET install needed
 

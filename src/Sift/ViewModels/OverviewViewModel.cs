@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Globalization;
+using System.Text;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -25,16 +27,26 @@ public sealed class DriveEntry
     public bool IsLow => Total > 0 && Free < Total * 0.1;
 }
 
+public sealed class RecentScan
+{
+    public required string Path { get; init; }
+    public string Name => System.IO.Path.GetFileName(Path.TrimEnd('\\')) is { Length: > 0 } n ? n : Path;
+    public bool Exists => Directory.Exists(Path);
+}
+
 public sealed class NodeRow
 {
-    public NodeRow(FileNode node, long parentSize)
+    public NodeRow(FileNode node, long parentSize, string location = "")
     {
         Node = node;
         Percent = parentSize > 0 ? node.Size * 100.0 / parentSize : 0;
+        Location = location;
     }
 
     public FileNode Node { get; }
     public string Name => Node.Name;
+    public string Location { get; }
+    public bool HasLocation => Location.Length > 0;
     public string SizeText => Format.Bytes(Node.Size);
     public double Percent { get; }
     public string PercentText => Percent >= 10 ? $"{Percent:0}%" : Percent >= 0.1 ? $"{Percent:0.0}%" : "<0.1%";
@@ -43,22 +55,33 @@ public sealed class NodeRow
     public string Glyph => Node.IsDirectory ? "\uE8B7" : "\uE8A5";
     public Brush Accent => Node.IsDirectory ? CategoryPalette.SolidBrush(FileCategory.Folder) : CategoryPalette.SolidBrush(Node.Category);
     public bool IsDirectory => Node.IsDirectory;
+    public string Tip => HasLocation ? $"{Node.Name}\n{Location}" : Node.Name;
 }
 
-public sealed class CategoryStat
+public sealed record CategoryStat
 {
+    public required FileCategory Category { get; init; }
     public required string Name { get; init; }
     public required Brush Brush { get; init; }
     public long Size { get; init; }
     public double Percent { get; init; }
+    public bool IsDimmed { get; init; }
+    public bool IsActive { get; init; }
     public string SizeText => Format.Bytes(Size);
+    public string Tip => $"{Name}: {Format.Bytes(Size)} ({Percent:0.#}%) — click to highlight in the map";
 }
+
+public enum ListMode { Contents, LargestFiles }
+public enum SortKey { Size, Name, Modified }
 
 public sealed class OverviewViewModel : ObservableObject
 {
+    private const int LargestCount = 250;
+
     private readonly AppSettings _settings;
     private readonly ReviewViewModel _review;
     private readonly DispatcherTimer _progressTimer;
+    private readonly DispatcherTimer _filterTimer;
     private DiskScanner? _scanner;
     private CancellationTokenSource? _cts;
     private readonly Stopwatch _clock = new();
@@ -69,19 +92,33 @@ public sealed class OverviewViewModel : ObservableObject
         _review = review;
         _progressTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
         _progressTimer.Tick += (_, _) => UpdateProgress();
+        _filterTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(160) };
+        _filterTimer.Tick += (_, _) => { _filterTimer.Stop(); RebuildRows(); };
 
-        ScanCommand = new RelayCommand(p => _ = ScanAsync(p as string ?? (p as DriveEntry)?.Root ?? Target), _ => !IsScanning);
+        ScanCommand = new RelayCommand(p => _ = ScanAsync(p as string ?? (p as DriveEntry)?.Root ?? (p as RecentScan)?.Path ?? Target), _ => !IsScanning);
         BrowseCommand = new RelayCommand(Browse, () => !IsScanning);
         CancelCommand = new RelayCommand(() => _cts?.Cancel(), () => IsScanning);
         RescanCommand = new RelayCommand(() => _ = ScanAsync(Root?.Name ?? Target), () => !IsScanning && Root is not null);
         NewScanCommand = new RelayCommand(() => { Root = null; Current = null; RefreshDrives(); }, () => !IsScanning);
-        UpCommand = new RelayCommand(() => { if (Current?.Parent is { } p) NavigateTo(p); }, () => Current?.Parent is not null);
-        NavigateCommand = new RelayCommand(p => { if (p is FileNode n) NavigateTo(n.IsDirectory ? n : n.Parent ?? n); });
-        OpenInExplorerCommand = new RelayCommand(p => { if ((p as FileNode ?? Selected) is { } n) FsUtil.OpenInExplorer(n.FullPath); });
-        CopyPathCommand = new RelayCommand(p => { if ((p as FileNode ?? Selected) is { } n) try { Clipboard.SetText(n.FullPath); } catch { } });
+        UpCommand = new RelayCommand(() => { if (Current?.Parent is { } p) NavigateTo(p, select: Current); }, () => Current?.Parent is not null);
+        NavigateCommand = new RelayCommand(p => { if ((p as FileNode ?? Selected) is { } n) NavigateTo(n.IsDirectory ? n : n.Parent ?? n); });
+        OpenInExplorerCommand = new RelayCommand(p => { if ((p as FileNode ?? Selected) is { } n) FsUtil.OpenInExplorer(n.FullPath); }, p => (p as FileNode ?? Selected) is not null);
+        OpenCommand = new RelayCommand(p => { if ((p as FileNode ?? Selected) is { } n) FsUtil.OpenUri(n.FullPath); }, p => (p as FileNode ?? Selected) is not null);
+        CopyPathCommand = new RelayCommand(p => { if ((p as FileNode ?? Selected) is { } n) try { Clipboard.SetText(n.FullPath); } catch { } }, p => (p as FileNode ?? Selected) is not null);
         AddToReviewCommand = new RelayCommand(p => { if ((p as FileNode ?? Selected) is { } n) AddToReview(n); },
             p => (p as FileNode ?? Selected) is { IsRoot: false });
+        ExcludeCommand = new RelayCommand(p => { if ((p as FileNode ?? Selected) is { IsDirectory: true, IsRoot: false } n) ExcludeRequested?.Invoke(n.FullPath); },
+            p => (p as FileNode ?? Selected) is { IsDirectory: true, IsRoot: false });
+        SortCommand = new RelayCommand(p => { if (p is string s && Enum.TryParse<SortKey>(s, out var k)) SortBy(k); });
+        HighlightCommand = new RelayCommand(p => { if (p is CategoryStat c) Highlight = Highlight == c.Category ? null : c.Category; });
+        ClearHighlightCommand = new RelayCommand(() => Highlight = null);
+        ExportCommand = new RelayCommand(Export, () => Current is not null);
+        RemoveRecentCommand = new RelayCommand(p =>
+        {
+            if (p is RecentScan r) { _settings.RecentScans.Remove(r.Path); _settings.Save(); RefreshRecents(); }
+        });
         RefreshDrives();
+        RefreshRecents();
     }
 
     // ------------------------------------------------------------------ commands
@@ -93,14 +130,25 @@ public sealed class OverviewViewModel : ObservableObject
     public ICommand UpCommand { get; }
     public ICommand NavigateCommand { get; }
     public ICommand OpenInExplorerCommand { get; }
+    public ICommand OpenCommand { get; }
     public ICommand CopyPathCommand { get; }
     public ICommand AddToReviewCommand { get; }
+    public ICommand ExcludeCommand { get; }
+    public ICommand SortCommand { get; }
+    public ICommand HighlightCommand { get; }
+    public ICommand ClearHighlightCommand { get; }
+    public ICommand ExportCommand { get; }
+    public ICommand RemoveRecentCommand { get; }
 
     /// <summary>Raised when a scan finishes successfully.</summary>
     public event Action<FileNode>? ScanCompleted;
+    /// <summary>Raised when the user asks to skip a folder in future scans.</summary>
+    public event Action<string>? ExcludeRequested;
 
-    // ------------------------------------------------------------------ drives
+    // ------------------------------------------------------------------ drives & recents
     public ObservableCollection<DriveEntry> Drives { get; } = new();
+    public ObservableCollection<RecentScan> Recents { get; } = new();
+    public bool HasRecents => Recents.Count > 0;
 
     public void RefreshDrives()
     {
@@ -122,6 +170,19 @@ public sealed class OverviewViewModel : ObservableObject
             }
             catch { /* drive vanished */ }
         }
+        RefreshRecents();
+    }
+
+    private void RefreshRecents()
+    {
+        Recents.Clear();
+        foreach (var p in _settings.RecentScans)
+        {
+            // Whole drives already have their own cards.
+            if (Drives.Any(d => string.Equals(d.Root.TrimEnd('\\'), p.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))) continue;
+            Recents.Add(new RecentScan { Path = p });
+        }
+        Raise(nameof(HasRecents));
     }
 
     private string Target => _settings.LastTarget is { } t && Directory.Exists(t) ? t : Drives.FirstOrDefault()?.Root ?? "C:\\";
@@ -162,13 +223,17 @@ public sealed class OverviewViewModel : ObservableObject
     private double _progressPercent;
     public double ProgressPercent { get => _progressPercent; private set => Set(ref _progressPercent, value); }
 
+    /// <summary>True when the scan has a known size to measure progress against (a whole drive).</summary>
+    public bool HasProgressEstimate => _expectedBytes > 0;
+
     private long _expectedBytes;
     private TimeSpan _lastDuration;
-    private long _lastErrors;
+    private long _lastErrors, _lastSkipped;
 
     public string ScanSummary => Root is null ? "" :
         $"{Format.Bytes(Root.Size)} · {Format.Count(Root.FileCount)} files · {Format.Count(Root.FolderCount)} folders · scanned in {Format.Duration(_lastDuration)}"
-        + (_lastErrors > 0 ? $" · {Format.Count(_lastErrors)} folders skipped (no access)" : "");
+        + (_lastSkipped > 0 ? $" · {Format.Count(_lastSkipped)} skipped by your settings" : "")
+        + (_lastErrors > 0 ? $" · {Format.Count(_lastErrors)} folders unreadable (try Run as administrator)" : "");
 
     private string? _error;
     public string? Error { get => _error; set => Set(ref _error, value); }
@@ -193,11 +258,101 @@ public sealed class OverviewViewModel : ObservableObject
     public ObservableCollection<FileNode> Breadcrumb { get; } = new();
 
     private IReadOnlyList<NodeRow> _rows = Array.Empty<NodeRow>();
-    public IReadOnlyList<NodeRow> Rows { get => _rows; private set => Set(ref _rows, value); }
+    public IReadOnlyList<NodeRow> Rows { get => _rows; private set { if (Set(ref _rows, value)) Raise(nameof(RowsEmptyText), nameof(ShowRowsEmpty)); } }
+
+    public bool ShowRowsEmpty => Rows.Count == 0 && Current is not null;
+    public string RowsEmptyText => !string.IsNullOrWhiteSpace(FilterText) ? $"Nothing here matches “{FilterText.Trim()}”." : "This folder is empty.";
 
     public string CurrentSummary => Current is null ? "" :
         $"{Format.Bytes(Current.Size)} · {Format.Count(Current.FileCount)} files" + (Current.HadErrors ? " · some items unreadable" : "");
 
+    // ------------------------------------------------------------------ list: mode, filter, sort
+    private ListMode _mode = ListMode.Contents;
+    public ListMode Mode
+    {
+        get => _mode;
+        set { if (Set(ref _mode, value)) { Raise(nameof(IsLargestMode), nameof(ListTitle)); RebuildRows(); } }
+    }
+    public bool IsLargestMode => Mode == ListMode.LargestFiles;
+    public string ListTitle => IsLargestMode ? $"Largest files in {Current?.Name}" : Current?.Name ?? "";
+
+    private string _filterText = "";
+    public string FilterText
+    {
+        get => _filterText;
+        set
+        {
+            if (!Set(ref _filterText, value ?? "")) return;
+            _filterTimer.Stop();
+            _filterTimer.Start();
+        }
+    }
+
+    private SortKey _sortKey = SortKey.Size;
+    private bool _sortDescending = true;
+
+    public string NameHeader => "Name" + Arrow(SortKey.Name);
+    public string SizeHeader => "Size" + Arrow(SortKey.Size);
+    public string ModifiedHeader => "Modified" + Arrow(SortKey.Modified);
+    private string Arrow(SortKey k) => _sortKey == k ? (_sortDescending ? "  ↓" : "  ↑") : "";
+
+    public void SortBy(SortKey key)
+    {
+        if (_sortKey == key) _sortDescending = !_sortDescending;
+        else { _sortKey = key; _sortDescending = key != SortKey.Name; }
+        Raise(nameof(NameHeader), nameof(SizeHeader), nameof(ModifiedHeader));
+        RebuildRows();
+    }
+
+    private void RebuildRows()
+    {
+        var c = Current;
+        if (c is null) { Rows = Array.Empty<NodeRow>(); return; }
+        var filter = FilterText.Trim();
+        Func<FileNode, bool> match = filter.Length == 0 ? _ => true : n => n.Name.Contains(filter, StringComparison.OrdinalIgnoreCase);
+
+        IEnumerable<FileNode> src = IsLargestMode
+            ? TopFiles(c, LargestCount, match)
+            : (c.Children ?? new List<FileNode>()).Where(match);
+
+        src = (_sortKey, _sortDescending) switch
+        {
+            (SortKey.Name, false) => src.OrderBy(n => n.Name, StringComparer.CurrentCultureIgnoreCase),
+            (SortKey.Name, true) => src.OrderByDescending(n => n.Name, StringComparer.CurrentCultureIgnoreCase),
+            (SortKey.Modified, false) => src.OrderBy(n => n.LastWriteTicks),
+            (SortKey.Modified, true) => src.OrderByDescending(n => n.LastWriteTicks),
+            (SortKey.Size, false) => src.OrderBy(n => n.Size),
+            _ => src.OrderByDescending(n => n.Size),
+        };
+
+        Rows = src.Select(n => new NodeRow(n, c.Size, IsLargestMode ? RelativeFolder(c, n) : "")).ToList();
+        Raise(nameof(ListTitle));
+    }
+
+    /// <summary>The N biggest files anywhere under a folder (min-heap, one pass).</summary>
+    private static List<FileNode> TopFiles(FileNode folder, int n, Func<FileNode, bool> match)
+    {
+        var heap = new PriorityQueue<FileNode, long>(n + 1);
+        foreach (var f in folder.EnumerateFiles())
+        {
+            if (!match(f)) continue;
+            if (heap.Count < n) heap.Enqueue(f, f.Size);
+            else if (f.Size > heap.Peek().Size) heap.EnqueueDequeue(f, f.Size);
+        }
+        var list = new List<FileNode>(heap.Count);
+        while (heap.Count > 0) list.Add(heap.Dequeue());
+        list.Reverse();
+        return list;
+    }
+
+    private static string RelativeFolder(FileNode baseFolder, FileNode file)
+    {
+        var parts = new Stack<string>();
+        for (var p = file.Parent; p is not null && !ReferenceEquals(p, baseFolder); p = p.Parent) parts.Push(p.Name);
+        return parts.Count == 0 ? "(this folder)" : string.Join("\\", parts);
+    }
+
+    // ------------------------------------------------------------------ selection
     private FileNode? _selected;
     private bool _syncing;
     public FileNode? Selected
@@ -206,11 +361,11 @@ public sealed class OverviewViewModel : ObservableObject
         set
         {
             if (!Set(ref _selected, value)) return;
-            Raise(nameof(SelectedText));
+            Raise(nameof(SelectedText), nameof(HoverText));
             if (_syncing) return;
             _syncing = true;
             SelectedRow = value is null ? null : Rows.FirstOrDefault(r => ReferenceEquals(r.Node, value))
-                                                 ?? Rows.FirstOrDefault(r => value.IsDescendantOf(r.Node));
+                                                 ?? (IsLargestMode ? null : Rows.FirstOrDefault(r => value.IsDescendantOf(r.Node)));
             _syncing = false;
             RelayCommand.Refresh();
         }
@@ -252,20 +407,40 @@ public sealed class OverviewViewModel : ObservableObject
     private int _layoutVersion;
     public int LayoutVersion { get => _layoutVersion; private set => Set(ref _layoutVersion, value); }
 
+    // ------------------------------------------------------------------ categories / highlight
     private IReadOnlyList<CategoryStat> _categories = Array.Empty<CategoryStat>();
     public IReadOnlyList<CategoryStat> Categories { get => _categories; private set => Set(ref _categories, value); }
 
-    public void NavigateTo(FileNode node)
+    private FileCategory? _highlight;
+    public FileCategory? Highlight
+    {
+        get => _highlight;
+        set
+        {
+            if (!Set(ref _highlight, value)) return;
+            Categories = Categories.Select(c => c with { IsActive = c.Category == value, IsDimmed = value is not null && c.Category != value }).ToList();
+            Raise(nameof(HasHighlight), nameof(HighlightText));
+        }
+    }
+    public bool HasHighlight => Highlight is not null;
+    public string HighlightText => Highlight is { } h
+        ? $"Highlighting {FileCategories.Label(h).ToLowerInvariant()} · {Format.Bytes(Categories.FirstOrDefault(c => c.Category == h)?.Size ?? 0)}"
+        : "";
+
+    public void NavigateTo(FileNode node, FileNode? select = null)
     {
         if (!node.IsDirectory) node = node.Parent ?? node;
         Current = node;
-        Selected = null;
+        Selected = select;
     }
 
-    private void RebuildRows()
+    /// <summary>Esc: clear the filter first, then the highlight, then the selection.</summary>
+    public bool ClearOne()
     {
-        var c = Current;
-        Rows = c?.Children is null ? Array.Empty<NodeRow>() : c.Children.Select(n => new NodeRow(n, c.Size)).ToList();
+        if (FilterText.Length > 0) { FilterText = ""; return true; }
+        if (Highlight is not null) { Highlight = null; return true; }
+        if (Selected is not null) { Selected = null; return true; }
+        return false;
     }
 
     // ------------------------------------------------------------------ scanning
@@ -279,8 +454,13 @@ public sealed class OverviewViewModel : ObservableObject
     {
         if (IsScanning) return;
         Error = null;
+        if (!Directory.Exists(path))
+        {
+            Error = $"Can't find {path}.";
+            return;
+        }
         _cts = new CancellationTokenSource();
-        _scanner = new DiskScanner();
+        _scanner = new DiskScanner(_settings.Exclusions);
         ScanTarget = path;
         _expectedBytes = 0;
         try
@@ -293,6 +473,7 @@ public sealed class OverviewViewModel : ObservableObject
             }
         }
         catch { /* ignore */ }
+        Raise(nameof(HasProgressEstimate));
 
         IsScanning = true;
         _clock.Restart();
@@ -303,12 +484,19 @@ public sealed class OverviewViewModel : ObservableObject
             var result = await _scanner.ScanAsync(path, _cts.Token);
             _lastDuration = _clock.Elapsed;
             _lastErrors = _scanner.Errors;
+            _lastSkipped = _scanner.Skipped;
+            _highlight = null;
+            Raise(nameof(Highlight), nameof(HasHighlight), nameof(HighlightText));
             Categories = await Task.Run(() => BuildCategories(result));
+            _filterText = "";
+            Raise(nameof(FilterText));
             Root = result;
             Current = result;
             Selected = null;
             _settings.LastTarget = path;
+            _settings.AddRecent(path);
             _settings.Save();
+            RefreshRecents();
             ScanCompleted?.Invoke(result);
         }
         catch (Exception ex) when (IsCancel(ex))
@@ -345,7 +533,7 @@ public sealed class OverviewViewModel : ObservableObject
         ProgressPercent = _expectedBytes > 0 ? Math.Min(99, s.Bytes * 100.0 / _expectedBytes) : 0;
     }
 
-    private static IReadOnlyList<CategoryStat> BuildCategories(FileNode root)
+    private IReadOnlyList<CategoryStat> BuildCategories(FileNode root)
     {
         var totals = new Dictionary<FileCategory, long>();
         foreach (var f in root.EnumerateFiles())
@@ -354,17 +542,56 @@ public sealed class OverviewViewModel : ObservableObject
             totals[c] = totals.GetValueOrDefault(c) + f.Size;
         }
         long all = Math.Max(1, root.Size);
+        var hl = _highlight;
         return totals.Where(kv => kv.Value > 0)
             .OrderByDescending(kv => kv.Value)
             .Select(kv => new CategoryStat
             {
+                Category = kv.Key,
                 Name = FileCategories.Label(kv.Key),
                 Brush = CategoryPalette.SolidBrush(kv.Key),
                 Size = kv.Value,
                 Percent = kv.Value * 100.0 / all,
+                IsActive = hl == kv.Key,
+                IsDimmed = hl is not null && hl != kv.Key,
             })
             .ToList();
     }
+
+    // ------------------------------------------------------------------ export
+    private void Export()
+    {
+        var c = Current;
+        if (c is null) return;
+        var name = IsLargestMode ? $"Sift - largest files in {SafeName(c.Name)}.csv" : $"Sift - {SafeName(c.Name)}.csv";
+        var dlg = new SaveFileDialog { FileName = name, Filter = "CSV (*.csv)|*.csv", DefaultExt = ".csv", AddExtension = true };
+        if (dlg.ShowDialog() != true) return;
+        try { ExportTo(dlg.FileName); }
+        catch (Exception ex) { Error = $"Couldn't save the file: {ex.Message}"; }
+    }
+
+    /// <summary>Writes the current list to CSV (also used by the smoke test).</summary>
+    public void ExportTo(string file)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Name,Type,Path,Size (bytes),Size,Files,Modified");
+        foreach (var r in Rows)
+        {
+            var n = r.Node;
+            sb.Append(Csv(n.Name)).Append(',')
+              .Append(n.IsDirectory ? "Folder" : FileCategories.Label(n.Category)).Append(',')
+              .Append(Csv(n.FullPath)).Append(',')
+              .Append(n.Size.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(Csv(Format.Bytes(n.Size))).Append(',')
+              .Append(n.FileCount.ToString(CultureInfo.InvariantCulture)).Append(',')
+              .Append(n.LastWriteTicks > 0 ? n.LastWriteUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) : "")
+              .AppendLine();
+        }
+        File.WriteAllText(file, sb.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+    }
+
+    private static string Csv(string s) => s.IndexOfAny(new[] { ',', '"', '\n', '\r' }) >= 0 ? "\"" + s.Replace("\"", "\"\"") + "\"" : s;
+    private static string SafeName(string s) => string.Concat(s.Split(Path.GetInvalidFileNameChars())).Trim() is { Length: > 0 } n ? n : "scan";
 
     // ------------------------------------------------------------------ review / deletion integration
     public void AddToReview(FileNode n)
@@ -400,6 +627,8 @@ public sealed class OverviewViewModel : ObservableObject
         RebuildRows();
         Raise(nameof(CurrentSummary), nameof(ScanSummary));
         LayoutVersion++;
-        _ = Task.Run(() => BuildCategories(Root)).ContinueWith(t => Categories = t.Result, TaskScheduler.FromCurrentSynchronizationContext());
+        var root = Root;
+        _ = Task.Run(() => BuildCategories(root)).ContinueWith(t => { if (t.IsCompletedSuccessfully) Categories = t.Result; },
+            TaskScheduler.FromCurrentSynchronizationContext());
     }
 }

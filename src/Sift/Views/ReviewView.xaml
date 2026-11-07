@@ -11,6 +11,17 @@
         <StackPanel>
             <TextBlock Style="{StaticResource H1}" Text="Review"/>
             <TextBlock Style="{StaticResource Dim}" Text="{Binding Subtitle}" TextWrapping="Wrap" TextTrimming="None" Margin="0,4,0,0"/>
+            <Border Margin="0,12,0,0" Padding="12,8" CornerRadius="8" Background="{DynamicResource SurfaceAltBg}"
+                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <Button Style="{StaticResource GhostButton}" Content="Open" Command="{Binding OpenRecycleBinCommand}" Margin="0,0,4,0"/>
+                        <Button Style="{StaticResource GhostButton}" Content="Empty Recycle Bin…" Command="{Binding EmptyRecycleBinCommand}"/>
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource Glyph}" Text="&#xE74D;" FontSize="14" Foreground="{DynamicResource TextDimBrush}" Margin="0,0,10,0"/>
+                    <TextBlock Text="{Binding RecycleBinText}" VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{DynamicResource TextDimBrush}"/>
+                </DockPanel>
+            </Border>
         </StackPanel>
 
         <!-- Totals + actions -->

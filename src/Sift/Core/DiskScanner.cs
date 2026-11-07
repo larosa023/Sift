@@ -20,6 +20,18 @@ public sealed class DiskScanner
     };
 
     private readonly int _workers = Math.Clamp(Environment.ProcessorCount * 2, 4, 32);
+    private readonly HashSet<string> _excluded;
+
+    /// <param name="exclusions">Absolute folder paths to skip entirely.</param>
+    public DiskScanner(IEnumerable<string>? exclusions = null)
+    {
+        _excluded = new HashSet<string>(
+            (exclusions ?? Array.Empty<string>()).Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.TrimEnd('\\')),
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    public long Skipped => Interlocked.Read(ref _skipped);
+    private long _skipped;
     private long _files, _folders, _bytes, _errors, _pending;
     private SemaphoreSlim? _signal;
     private volatile string _current = string.Empty;
@@ -120,11 +132,13 @@ public sealed class DiskScanner
                 {
                     // Junctions / symlinked folders would double count or loop.
                     if ((e.Attributes & FileAttributes.ReparsePoint) != 0) continue;
+                    var childPath = Path.Join(path, e.Name);
+                    if (_excluded.Count > 0 && _excluded.Contains(childPath)) { Interlocked.Increment(ref _skipped); continue; }
                     var child = new FileNode(e.Name, node, true) { LastWriteTicks = e.Ticks };
                     children.Add(child);
                     // Count it as pending *before* it becomes visible to other workers.
                     Interlocked.Increment(ref _pending);
-                    queue.Push(new Work(child, Path.Join(path, e.Name)));
+                    queue.Push(new Work(child, childPath));
                     subdirs++;
                 }
                 else

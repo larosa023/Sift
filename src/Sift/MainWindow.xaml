@@ -10,7 +10,12 @@
         Foreground="{DynamicResource TextBrush}"
         FontFamily="{StaticResource UiFont}" FontSize="13"
         UseLayoutRounding="True" SnapsToDevicePixels="True"
-        TextOptions.TextFormattingMode="Ideal">
+        TextOptions.TextFormattingMode="Ideal"
+        AllowDrop="True">
+
+    <Window.TaskbarItemInfo>
+        <TaskbarItemInfo/>
+    </Window.TaskbarItemInfo>
 
     <WindowChrome.WindowChrome>
         <WindowChrome CaptionHeight="44" ResizeBorderThickness="6" CornerRadius="0"
@@ -138,7 +143,7 @@
 
                 <Grid Grid.Row="1">
                     <Grid Visibility="{Binding CurrentPage, Converter={StaticResource Equals}, ConverterParameter=Overview}">
-                        <views:OverviewView DataContext="{Binding Overview}"/>
+                        <views:OverviewView x:Name="OverviewPage" DataContext="{Binding Overview}"/>
                     </Grid>
                     <Grid Visibility="{Binding CurrentPage, Converter={StaticResource Equals}, ConverterParameter=Cleanup}">
                         <views:CleanupView DataContext="{Binding Cleanup}"/>
@@ -151,6 +156,29 @@
                     </Grid>
                 </Grid>
             </Grid>
+
+            <!-- Toast -->
+            <Border Grid.RowSpan="2" Grid.ColumnSpan="2" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="212,0,0,22"
+                    Padding="16,10" CornerRadius="9" Background="{DynamicResource PopupBg}" BorderBrush="{DynamicResource LineStrongBrush}"
+                    BorderThickness="1" IsHitTestVisible="False"
+                    Visibility="{Binding Toast, Converter={StaticResource NullVis}}">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="18" ShadowDepth="4" Opacity="0.3"/>
+                </Border.Effect>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Style="{StaticResource Glyph}" Text="&#xE73E;" FontSize="13" Foreground="{DynamicResource SuccessBrush}"/>
+                    <TextBlock Text="{Binding Toast}" Margin="10,0,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Drag & drop hint -->
+            <Border x:Name="DropOverlay" Grid.RowSpan="2" Grid.ColumnSpan="2" Visibility="Collapsed" IsHitTestVisible="False"
+                    Background="{DynamicResource AccentSoftBrush}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="3" Margin="8" CornerRadius="12">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <TextBlock Style="{StaticResource Glyph}" Text="&#xE896;" FontSize="40" HorizontalAlignment="Center" Foreground="{DynamicResource AccentForegroundBrush}"/>
+                    <TextBlock Text="Drop to scan this folder" Style="{StaticResource H2}" Margin="0,12,0,0" HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Border>
         </Grid>
     </Border>
 </Window>

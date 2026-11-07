@@ -73,6 +73,42 @@ public sealed class ReviewViewModel : ObservableObject
         ClearFinishedCommand = new RelayCommand(() => { foreach (var i in Items.Where(x => x.IsFinished).ToList()) Remove(i); });
         OpenCommand = new RelayCommand(p => { if (p is ReviewItem i) FsUtil.OpenInExplorer(i.Path); });
         CheckAllCommand = new RelayCommand(() => { foreach (var i in Items) i.IsChecked = true; });
+        OpenRecycleBinCommand = new RelayCommand(() => FsUtil.OpenUri("shell:RecycleBinFolder"));
+        EmptyRecycleBinCommand = new RelayCommand(EmptyRecycleBin, () => !IsWorking && RecycleBinItems > 0);
+        RefreshRecycleBin();
+    }
+
+    public ICommand OpenRecycleBinCommand { get; }
+    public ICommand EmptyRecycleBinCommand { get; }
+
+    private long _recycleBinSize, _recycleBinItems;
+    public long RecycleBinSize { get => _recycleBinSize; private set => Set(ref _recycleBinSize, value); }
+    public long RecycleBinItems { get => _recycleBinItems; private set { if (Set(ref _recycleBinItems, value)) RelayCommand.Refresh(); } }
+    public string RecycleBinText => RecycleBinItems == 0
+        ? "The Recycle Bin is empty."
+        : $"{Format.Bytes(RecycleBinSize)} in {Format.Count(RecycleBinItems)} item{(RecycleBinItems == 1 ? "" : "s")} — this space is only freed once the Recycle Bin is emptied.";
+
+    public void RefreshRecycleBin()
+    {
+        var (size, items) = Native.RecycleBinInfo();
+        RecycleBinSize = size;
+        RecycleBinItems = items;
+        Raise(nameof(RecycleBinText));
+    }
+
+    private void EmptyRecycleBin()
+    {
+        var owner = System.Windows.Application.Current?.MainWindow is { } w
+            ? new System.Windows.Interop.WindowInteropHelper(w).Handle
+            : IntPtr.Zero;
+        long before = RecycleBinSize;
+        // Windows shows its own "Are you sure?" prompt.
+        if (Native.EmptyRecycleBin(owner))
+        {
+            RefreshRecycleBin();
+            ResultText = $"Emptied the Recycle Bin · {Format.Bytes(Math.Max(0, before - RecycleBinSize))} freed";
+        }
+        else RefreshRecycleBin();
     }
 
     public ObservableCollection<ReviewItem> Items { get; } = new();
@@ -233,7 +269,18 @@ public sealed class ReviewViewModel : ObservableObject
         if (ok > 0) parts.Add(_settings.PermanentDelete ? $"Freed {Format.Bytes(freed)}" : $"Moved {Format.Bytes(freed)} to the Recycle Bin");
         if (handed > 0) parts.Add($"{handed} uninstaller{(handed == 1 ? "" : "s")} opened");
         if (failed > 0) parts.Add($"{failed} couldn't be removed");
+        var drives = work.Select(w => Path.GetPathRoot(w.Path)).Where(r => !string.IsNullOrEmpty(r)).Distinct(StringComparer.OrdinalIgnoreCase);
+        foreach (var root in drives)
+        {
+            try
+            {
+                var d = new DriveInfo(root!);
+                if (d.IsReady) parts.Add($"{d.Name.TrimEnd('\\')} now has {Format.Bytes(d.AvailableFreeSpace)} free");
+            }
+            catch { /* ignore */ }
+        }
         ResultText = string.Join(" · ", parts);
+        RefreshRecycleBin();
         if (deleted.Count > 0) ItemsDeleted?.Invoke(deleted);
         RaiseTotals();
     }

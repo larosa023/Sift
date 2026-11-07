@@ -18,11 +18,21 @@ public sealed class MainViewModel : ObservableObject
         Update = new UpdateViewModel(settings);
         SettingsPage = new SettingsViewModel(settings, Update);
         SettingsPage.Changed += () => Review.SettingsChanged();
+        Overview.ExcludeRequested += path =>
+        {
+            SettingsPage.AddExclusion(path);
+            Toast = $"{path} will be skipped in future scans · change this in Settings";
+        };
 
         Review.ItemsDeleted += deleted =>
         {
             Overview.ApplyDeletions(deleted);
             Cleanup.ApplyDeletions(deleted);
+        };
+        Review.Items.CollectionChanged += (_, e) =>
+        {
+            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Add && CurrentPage != Page.Review)
+                Toast = $"Added to Review · {Review.PendingCount} waiting";
         };
         Review.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(ReviewViewModel.PendingCount)) Raise(nameof(ReviewBadge), nameof(HasReviewBadge)); };
 
@@ -41,7 +51,28 @@ public sealed class MainViewModel : ObservableObject
     public ICommand RestartAsAdminCommand { get; }
 
     private Page _currentPage = Page.Overview;
-    public Page CurrentPage { get => _currentPage; set => Set(ref _currentPage, value); }
+    public Page CurrentPage
+    {
+        get => _currentPage;
+        set
+        {
+            if (!Set(ref _currentPage, value)) return;
+            if (value == Page.Review) Review.RefreshRecycleBin();
+        }
+    }
+
+    private string? _toast;
+    /// <summary>A short, self-dismissing status message shown at the bottom of the window.</summary>
+    public string? Toast
+    {
+        get => _toast;
+        set
+        {
+            if (!Set(ref _toast, value) || value is null) return;
+            var mine = value;
+            _ = Task.Delay(4500).ContinueWith(_ => { if (Toast == mine) Toast = null; }, TaskScheduler.FromCurrentSynchronizationContext());
+        }
+    }
 
     public bool IsAdmin { get; } = Native.IsElevated();
     public string Version => Updater.CurrentVersionText;

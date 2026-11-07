@@ -3,11 +3,10 @@ using System.Text.Json.Serialization;
 
 namespace Sift.Core;
 
-public enum ThemeMode { System, Light, Dark }
-
 public sealed class AppSettings
 {
-    public ThemeMode Theme { get; set; } = ThemeMode.System;
+    /// <summary>Theme id from ThemeCatalog, or "system". Older settings files stored System/Light/Dark, which still map.</summary>
+    public string Theme { get; set; } = "system";
     public string Accent { get; set; } = "#6366F1";
 
     public int GameUnplayedDays { get; set; } = 90;
@@ -25,6 +24,17 @@ public sealed class AppSettings
     public bool AutoCheckUpdates { get; set; } = true;
     public string? SkippedVersion { get; set; }
     public string? LastTarget { get; set; }
+    /// <summary>Most recent first.</summary>
+    public List<string> RecentScans { get; set; } = new();
+    /// <summary>Folders skipped entirely while scanning.</summary>
+    public List<string> Exclusions { get; set; } = new();
+
+    public void AddRecent(string path)
+    {
+        RecentScans.RemoveAll(p => string.Equals(p.TrimEnd('\\'), path.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase));
+        RecentScans.Insert(0, path);
+        if (RecentScans.Count > 6) RecentScans.RemoveRange(6, RecentScans.Count - 6);
+    }
 
     public double WindowWidth { get; set; } = 1280;
     public double WindowHeight { get; set; } = 820;

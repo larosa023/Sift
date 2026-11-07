@@ -13,7 +13,7 @@
     <Description>Fast, modern disk space analyzer for Windows</Description>
     <Authors>Anthony LaRosa</Authors>
     <Copyright>© Anthony LaRosa</Copyright>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\sift.ico</ApplicationIcon>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
