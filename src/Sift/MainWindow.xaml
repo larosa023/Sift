@@ -1,0 +1,156 @@
+<Window x:Class="Sift.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="clr-namespace:Sift.Views"
+        xmlns:vm="clr-namespace:Sift.ViewModels"
+        Title="Sift" Width="1280" Height="820" MinWidth="960" MinHeight="600"
+        WindowStartupLocation="CenterScreen"
+        Icon="pack://application:,,,/Sift;component/Assets/sift.ico"
+        Background="{DynamicResource WindowBg}"
+        Foreground="{DynamicResource TextBrush}"
+        FontFamily="{StaticResource UiFont}" FontSize="13"
+        UseLayoutRounding="True" SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Ideal">
+
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="44" ResizeBorderThickness="6" CornerRadius="0"
+                      GlassFrameThickness="0,0,0,1" UseAeroCaptionButtons="False"/>
+    </WindowChrome.WindowChrome>
+
+    <Border x:Name="RootBorder">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="212"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="44"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- Sidebar background spans title row too -->
+            <Border Grid.RowSpan="2" Background="{DynamicResource SidebarBg}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,1,0"/>
+
+            <!-- ===== Title bar ===== -->
+            <StackPanel Orientation="Horizontal" Margin="16,0,0,0" VerticalAlignment="Center">
+                <Image Source="pack://application:,,,/Sift;component/Assets/sift.png" Width="20" Height="20"
+                       RenderOptions.BitmapScalingMode="HighQuality"/>
+                <TextBlock Text="Sift" Margin="10,0,0,0" FontFamily="{StaticResource DisplayFont}" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            </StackPanel>
+
+            <DockPanel Grid.Column="1" LastChildFill="False">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Style="{StaticResource GhostButton}" Margin="0,0,8,0" Padding="10,4" VerticalAlignment="Center"
+                            WindowChrome.IsHitTestVisibleInChrome="True"
+                            Command="{Binding RestartAsAdminCommand}"
+                            Visibility="{Binding IsAdmin, Converter={StaticResource NotBoolVis}}"
+                            ToolTip="Restart elevated to scan protected system folders and clean system caches">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Glyph}" Text="&#xE7EF;" FontSize="13" Foreground="{DynamicResource TextDimBrush}"/>
+                            <TextBlock Text="Run as administrator" Margin="7,0,0,0" FontSize="12" Foreground="{DynamicResource TextDimBrush}"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource CaptionButton}" Content="&#xE921;" Click="Minimize_Click" ToolTip="Minimize"/>
+                    <Button x:Name="MaxButton" Style="{StaticResource CaptionButton}" Content="&#xE922;" Click="Maximize_Click" ToolTip="Maximize"/>
+                    <Button Style="{StaticResource CloseCaptionButton}" Content="&#xE8BB;" Click="Close_Click" ToolTip="Close"/>
+                </StackPanel>
+            </DockPanel>
+
+            <!-- ===== Sidebar ===== -->
+            <DockPanel Grid.Row="1" Margin="0,8,0,12">
+                <StackPanel DockPanel.Dock="Bottom">
+                    <RadioButton Style="{StaticResource NavItem}"
+                                 IsChecked="{Binding CurrentPage, Converter={StaticResource Equals}, ConverterParameter=Settings}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Glyph}" Text="&#xE713;"/>
+                            <TextBlock Text="Settings" Margin="12,0,0,0"/>
+                        </StackPanel>
+                    </RadioButton>
+                    <TextBlock Text="{Binding Version, StringFormat='Version {0}'}" Style="{StaticResource Faint}" Margin="22,10,0,0" FontSize="11"/>
+                </StackPanel>
+
+                <StackPanel>
+                    <TextBlock Text="ANALYZE" Style="{StaticResource Label}" Margin="22,4,0,6"/>
+                    <RadioButton Style="{StaticResource NavItem}"
+                                 IsChecked="{Binding CurrentPage, Converter={StaticResource Equals}, ConverterParameter=Overview}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Glyph}" Text="&#xE80F;"/>
+                            <TextBlock Text="Overview" Margin="12,0,0,0"/>
+                        </StackPanel>
+                    </RadioButton>
+                    <RadioButton Style="{StaticResource NavItem}"
+                                 IsChecked="{Binding CurrentPage, Converter={StaticResource Equals}, ConverterParameter=Cleanup}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Glyph}" Text="&#xE945;"/>
+                            <TextBlock Text="Cleanup" Margin="12,0,0,0"/>
+                        </StackPanel>
+                    </RadioButton>
+                    <RadioButton Style="{StaticResource NavItem}"
+                                 IsChecked="{Binding CurrentPage, Converter={StaticResource Equals}, ConverterParameter=Review}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Style="{StaticResource Glyph}" Text="&#xE74D;"/>
+                            <TextBlock Grid.Column="1" Text="Review" Margin="12,0,0,0"/>
+                            <Border Grid.Column="2" Style="{StaticResource Badge}" Background="{DynamicResource AccentBrush}" Margin="38,0,0,0"
+                                    Visibility="{Binding HasReviewBadge, Converter={StaticResource BoolVis}}">
+                                <TextBlock Text="{Binding ReviewBadge}" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource AccentTextBrush}"/>
+                            </Border>
+                        </Grid>
+                    </RadioButton>
+                </StackPanel>
+            </DockPanel>
+
+            <!-- ===== Content ===== -->
+            <Grid Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Margin="0,44,0,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- Update banner -->
+                <Border DataContext="{Binding Update}" Margin="24,4,24,0" CornerRadius="9" Padding="14,10"
+                        Background="{DynamicResource AccentSoftBrush}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1"
+                        Visibility="{Binding BannerVisible, Converter={StaticResource BoolVis}}">
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                            <Button Style="{StaticResource LinkButton}" Content="What's new" Command="{Binding NotesCommand}" VerticalAlignment="Center" Margin="0,0,16,0"/>
+                            <Button Style="{StaticResource GhostButton}" Content="Skip this version" Command="{Binding SkipCommand}" Margin="0,0,6,0"
+                                    Visibility="{Binding IsDownloading, Converter={StaticResource NotBoolVis}}"/>
+                            <Button Style="{StaticResource GhostButton}" Content="Later" Command="{Binding LaterCommand}" Margin="0,0,8,0"
+                                    Visibility="{Binding IsDownloading, Converter={StaticResource NotBoolVis}}"/>
+                            <Button Style="{StaticResource GhostButton}" Content="Cancel" Command="{Binding CancelCommand}" Margin="0,0,8,0"
+                                    Visibility="{Binding IsDownloading, Converter={StaticResource BoolVis}}"/>
+                            <Button Style="{StaticResource AccentButton}" Content="Update and restart" Command="{Binding InstallCommand}"
+                                    Visibility="{Binding IsDownloading, Converter={StaticResource NotBoolVis}}"/>
+                        </StackPanel>
+                        <TextBlock Style="{StaticResource Glyph}" Text="&#xE896;" Foreground="{DynamicResource AccentForegroundBrush}" Margin="0,0,12,0"/>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="{Binding BannerText}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                            <ProgressBar Value="{Binding Progress, Mode=OneWay}" Maximum="1" Height="4" Margin="0,6,24,0"
+                                         Visibility="{Binding IsDownloading, Converter={StaticResource BoolVis}}"/>
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+
+                <Grid Grid.Row="1">
+                    <Grid Visibility="{Binding CurrentPage, Converter={StaticResource Equals}, ConverterParameter=Overview}">
+                        <views:OverviewView DataContext="{Binding Overview}"/>
+                    </Grid>
+                    <Grid Visibility="{Binding CurrentPage, Converter={StaticResource Equals}, ConverterParameter=Cleanup}">
+                        <views:CleanupView DataContext="{Binding Cleanup}"/>
+                    </Grid>
+                    <Grid Visibility="{Binding CurrentPage, Converter={StaticResource Equals}, ConverterParameter=Review}">
+                        <views:ReviewView DataContext="{Binding Review}"/>
+                    </Grid>
+                    <Grid Visibility="{Binding CurrentPage, Converter={StaticResource Equals}, ConverterParameter=Settings}">
+                        <views:SettingsView DataContext="{Binding SettingsPage}"/>
+                    </Grid>
+                </Grid>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

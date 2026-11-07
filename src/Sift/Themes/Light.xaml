@@ -1,0 +1,28 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <SolidColorBrush x:Key="WindowBg" Color="#F6F7FA"/>
+    <SolidColorBrush x:Key="SidebarBg" Color="#EEF0F5"/>
+    <SolidColorBrush x:Key="SurfaceBg" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="SurfaceAltBg" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="CardBg" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="PopupBg" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="LineBrush" Color="#E3E6EE"/>
+    <SolidColorBrush x:Key="LineStrongBrush" Color="#CDD2DE"/>
+    <SolidColorBrush x:Key="TextBrush" Color="#161A24"/>
+    <SolidColorBrush x:Key="TextDimBrush" Color="#5B6275"/>
+    <SolidColorBrush x:Key="TextFaintBrush" Color="#8B92A5"/>
+    <SolidColorBrush x:Key="HoverBrush" Color="#EDEFF5"/>
+    <SolidColorBrush x:Key="PressedBrush" Color="#E2E5EE"/>
+    <SolidColorBrush x:Key="DangerBrush" Color="#DC2626"/>
+    <SolidColorBrush x:Key="DangerSoftBrush" Color="#1FDC2626"/>
+    <SolidColorBrush x:Key="WarningBrush" Color="#B45309"/>
+    <SolidColorBrush x:Key="WarningSoftBrush" Color="#1FD97706"/>
+    <SolidColorBrush x:Key="SuccessBrush" Color="#059669"/>
+    <SolidColorBrush x:Key="SuccessSoftBrush" Color="#1F059669"/>
+    <SolidColorBrush x:Key="ScrollThumbBrush" Color="#C3C8D4"/>
+    <SolidColorBrush x:Key="TrackBrush" Color="#E7E9F0"/>
+    <SolidColorBrush x:Key="TreemapBgBrush" Color="#E9ECF2"/>
+    <SolidColorBrush x:Key="TreemapFolderBrush" Color="#F3F5F9"/>
+    <SolidColorBrush x:Key="TreemapFolderLineBrush" Color="#C9CEDA"/>
+    <SolidColorBrush x:Key="TreemapLabelBrush" Color="#3A4152"/>
+</ResourceDictionary>

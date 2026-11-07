@@ -1,0 +1,60 @@
+# Sift
+
+A fast, modern disk space analyzer for Windows.
+
+Sift scans a drive in seconds and shows where the space went as an interactive treemap — then goes further than a plain visualizer and finds the stuff you can actually get rid of:
+
+- **Unplayed games** — Steam, Epic and GOG installs you haven't launched in months (uninstalled through the launcher, so your library stays tidy)
+- **Duplicate files** — byte-identical copies, verified with a full XxHash128 of every candidate
+- **Leftover app folders** — folders in Program Files, ProgramData and AppData that don't belong to any installed app
+- **Oversized caches** — temp, browser, GPU shader, Steam, Discord, Spotify and package-manager caches
+- **Stale downloads** — old installers, ISOs and archives sitting in Downloads
+
+Nothing is deleted until you review it. Items go to the **Recycle Bin** by default, and anything too large for the Recycle Bin triggers a Windows warning instead of being silently destroyed.
+
+## Features
+
+- Multi-threaded scanner that skips junctions/symlinks and ignores cloud-only OneDrive placeholders
+- Squarified, nested treemap with category colours; double-click to zoom, Backspace or mouse-back to go up
+- Folder contents list with share bars, kept in sync with the treemap
+- Review queue: everything from the treemap and every cleanup check lands here before anything is removed
+- Light, dark and "match Windows" themes with eight accent colours
+- Built-in updater backed by GitHub Releases, with SHA-256 verification
+- Single self-contained `Sift.exe` — no installer, no .NET install needed
+
+## Download
+
+Grab `Sift.exe` from the [latest release](https://github.com/larosa023/Sift/releases/latest) and run it. Sift checks for updates on launch (you can turn that off in Settings).
+
+Run as administrator (button in the title bar) to scan protected system folders and clean Windows Update / Delivery Optimization caches.
+
+## Building
+
+Requires the .NET 8 SDK on Windows.
+
+```powershell
+dotnet run --project src/Sift
+# single-file release build
+dotnet publish src/Sift -c Release -r win-x64 -o out
+```
+
+## Releasing
+
+Push a version tag and GitHub Actions builds the exe, computes its checksum and publishes the release that the in-app updater reads:
+
+```powershell
+git tag v1.1.0
+git push origin v1.1.0
+```
+
+The release must include `Sift.exe` and `Sift.exe.sha256` (the workflow handles both).
+
+## How the updater works
+
+On launch Sift asks the GitHub API for the latest release of `larosa023/Sift`. If its tag is newer than the running version, a banner offers to update. Sift downloads the new exe, checks it against `Sift.exe.sha256`, renames the running exe to `Sift.exe.old`, moves the new one into place and restarts. The `.old` file is cleaned up on the next launch. If Sift lives somewhere that needs admin rights to write, the swap is done from an elevated prompt.
+
+Settings live in `%LOCALAPPDATA%\Sift\settings.json`.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

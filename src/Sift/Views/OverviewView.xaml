@@ -1,0 +1,281 @@
+<UserControl x:Class="Sift.Views.OverviewView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Sift.Controls">
+    <UserControl.Resources>
+        <ContextMenu x:Key="NodeMenu" x:Shared="False">
+            <MenuItem Header="Zoom into folder" Command="{Binding NavigateCommand}" CommandParameter="{Binding Selected}">
+                <MenuItem.Icon><TextBlock Style="{StaticResource Glyph}" FontSize="13" Text="&#xE71E;"/></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="Show in File Explorer" Command="{Binding OpenInExplorerCommand}">
+                <MenuItem.Icon><TextBlock Style="{StaticResource Glyph}" FontSize="13" Text="&#xE838;"/></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="Copy path" Command="{Binding CopyPathCommand}">
+                <MenuItem.Icon><TextBlock Style="{StaticResource Glyph}" FontSize="13" Text="&#xE8C8;"/></MenuItem.Icon>
+            </MenuItem>
+            <Separator/>
+            <MenuItem Header="Add to review" Command="{Binding AddToReviewCommand}">
+                <MenuItem.Icon><TextBlock Style="{StaticResource Glyph}" FontSize="13" Text="&#xE74D;"/></MenuItem.Icon>
+            </MenuItem>
+        </ContextMenu>
+    </UserControl.Resources>
+
+    <Grid>
+        <!-- ============ Start: pick a drive ============ -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Visibility="{Binding ShowStart, Converter={StaticResource BoolVis}}">
+            <StackPanel Margin="40,30,40,30" MaxWidth="1000" HorizontalAlignment="Left">
+                <TextBlock Style="{StaticResource H1}" Text="What's taking up space?"/>
+                <TextBlock Style="{StaticResource Dim}" FontSize="13.5" Margin="0,6,0,0" TextWrapping="Wrap"
+                           Text="Pick a drive to map every file and folder. Nothing on your PC changes until you review and confirm."/>
+                <Border Margin="0,16,0,0" Padding="12,8" CornerRadius="7" Background="{DynamicResource DangerSoftBrush}"
+                        Visibility="{Binding Error, Converter={StaticResource NullVis}}">
+                    <TextBlock Text="{Binding Error}" Foreground="{DynamicResource DangerBrush}" TextWrapping="Wrap"/>
+                </Border>
+
+                <ItemsControl ItemsSource="{Binding Drives}" Margin="0,26,0,0">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Width="300" Margin="0,0,14,14" Padding="0" Cursor="Hand"
+                                    Command="{Binding DataContext.ScanCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                    CommandParameter="{Binding Root}">
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border x:Name="Bd" Background="{DynamicResource CardBg}" BorderBrush="{DynamicResource LineBrush}"
+                                                BorderThickness="1" CornerRadius="10" Padding="18,16">
+                                            <ContentPresenter/>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource HoverBrush}"/>
+                                            </Trigger>
+                                            <Trigger Property="IsEnabled" Value="False">
+                                                <Setter Property="Opacity" Value="0.5"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Button.Template>
+                                <StackPanel>
+                                    <DockPanel>
+                                        <Border DockPanel.Dock="Left" Width="38" Height="38" CornerRadius="9" Background="{DynamicResource AccentSoftBrush}">
+                                            <TextBlock Style="{StaticResource Glyph}" Text="&#xEDA2;" FontSize="18" HorizontalAlignment="Center"
+                                                       Foreground="{DynamicResource AccentForegroundBrush}"/>
+                                        </Border>
+                                        <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="14" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Text="{Binding UsageText}" Style="{StaticResource Dim}" Margin="0,2,0,0"/>
+                                        </StackPanel>
+                                    </DockPanel>
+                                    <ProgressBar Value="{Binding Percent, Mode=OneWay}" Maximum="100" Margin="0,16,0,0" Height="6">
+                                        <ProgressBar.Style>
+                                            <Style TargetType="ProgressBar" BasedOn="{StaticResource {x:Type ProgressBar}}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsLow}" Value="True">
+                                                        <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </ProgressBar.Style>
+                                    </ProgressBar>
+                                    <TextBlock Margin="0,10,0,0" Style="{StaticResource Faint}">
+                                        <Run Text="Scan"/><Run Text=" "/><Run Text="{Binding Letter, Mode=OneWay}"/><Run Text="  →"/>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                    <Button Command="{Binding BrowseCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Glyph}" Text="&#xE838;" FontSize="14"/>
+                            <TextBlock Text="Scan a folder…" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource GhostButton}" Margin="8,0,0,0" Command="{Binding NewScanCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Glyph}" Text="&#xE72C;" FontSize="13"/>
+                            <TextBlock Text="Refresh drives" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- ============ Scanning ============ -->
+        <Grid Visibility="{Binding IsScanning, Converter={StaticResource BoolVis}}">
+            <Border Style="{StaticResource Card}" Width="560" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="28,26">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <Control Style="{StaticResource Spinner}" Width="22" Height="22"/>
+                        <TextBlock Style="{StaticResource H2}" Margin="12,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="440"
+                                   Text="{Binding ScanTarget, StringFormat='Scanning {0}'}"/>
+                    </StackPanel>
+                    <ProgressBar Value="{Binding ProgressPercent, Mode=OneWay}" Maximum="100" Margin="0,22,0,0"/>
+                    <Grid Margin="0,16,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="{Binding ProgressBytes}" FontFamily="{StaticResource DisplayFont}" FontSize="26" FontWeight="SemiBold"/>
+                            <TextBlock Text="{Binding ProgressFiles}" Style="{StaticResource Dim}" Margin="0,2,0,0"/>
+                        </StackPanel>
+                        <TextBlock Grid.Column="1" Text="{Binding ProgressTime}" Style="{StaticResource Dim}" VerticalAlignment="Bottom"/>
+                    </Grid>
+                    <TextBlock Text="{Binding ProgressPath}" Style="{StaticResource Faint}" Margin="0,14,0,0"/>
+                    <Button Content="Cancel" Command="{Binding CancelCommand}" HorizontalAlignment="Right" Margin="0,20,0,0"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- ============ Results ============ -->
+        <Grid Visibility="{Binding ShowResults, Converter={StaticResource BoolVis}}" Margin="20,10,20,16">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- Toolbar -->
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Command="{Binding RescanCommand}" Margin="0,0,8,0" ToolTip="Scan the same location again">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Glyph}" Text="&#xE72C;" FontSize="13"/>
+                            <TextBlock Text="Rescan" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Command="{Binding NewScanCommand}" Style="{StaticResource GhostButton}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Glyph}" Text="&#xEDA2;" FontSize="13"/>
+                            <TextBlock Text="Other drive" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+                <Button Style="{StaticResource IconButton}" Content="&#xE74A;" Command="{Binding UpCommand}" ToolTip="Up one level (Backspace)" Margin="0,0,6,0"/>
+                <ItemsControl ItemsSource="{Binding Breadcrumb}" VerticalAlignment="Center">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock x:Name="Chevron" Style="{StaticResource Glyph}" Text="&#xE76C;" FontSize="10" Margin="6,0"
+                                           Foreground="{DynamicResource TextFaintBrush}"/>
+                                <Button Style="{StaticResource GhostButton}" Padding="6,4" MaxWidth="220"
+                                        Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding}">
+                                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" FontWeight="SemiBold"/>
+                                </Button>
+                            </StackPanel>
+                            <DataTemplate.Triggers>
+                                <DataTrigger Binding="{Binding IsRoot}" Value="True">
+                                    <Setter TargetName="Chevron" Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </DataTemplate.Triggers>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </DockPanel>
+
+            <TextBlock Grid.Row="1" Text="{Binding ScanSummary}" Style="{StaticResource Faint}" Margin="4,6,0,10"/>
+
+            <Grid Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" MinWidth="320"/>
+                    <ColumnDefinition Width="14"/>
+                    <ColumnDefinition Width="420" MinWidth="300"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Treemap + legend -->
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
+                        <TextBlock Text="{Binding HoverText}" Style="{StaticResource Dim}"/>
+                        <ItemsControl ItemsSource="{Binding Categories}" Margin="0,8,0,0">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" Margin="0,2,16,2">
+                                        <Border Width="10" Height="10" CornerRadius="3" Background="{Binding Brush}" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding Name}" Margin="6,0,0,0" FontSize="12"/>
+                                        <TextBlock Text="{Binding SizeText}" Margin="6,0,0,0" FontSize="12" Foreground="{DynamicResource TextFaintBrush}"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                    <Border BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" CornerRadius="10" Padding="1"
+                            Background="{DynamicResource TreemapBgBrush}">
+                        <controls:TreemapControl x:Name="Treemap"
+                                                 Root="{Binding Current}"
+                                                 Selected="{Binding Selected}"
+                                                 Hovered="{Binding Hovered, Mode=OneWayToSource}"
+                                                 LayoutVersion="{Binding LayoutVersion}"
+                                                 ContextMenu="{StaticResource NodeMenu}"/>
+                    </Border>
+                </DockPanel>
+
+                <GridSplitter Grid.Column="1" Width="14" HorizontalAlignment="Stretch" ResizeBehavior="PreviousAndNext" Cursor="SizeWE"/>
+
+                <!-- Folder contents -->
+                <Border Grid.Column="2" Style="{StaticResource Card}" Padding="12,14,12,6">
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Top" Margin="6,0,6,10">
+                            <TextBlock Text="{Binding Current.Name}" Style="{StaticResource H2}" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding CurrentSummary}" Style="{StaticResource Dim}" Margin="0,2,0,0"/>
+                        </StackPanel>
+                        <ListView x:Name="ContentsList" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow}"
+                                  ContextMenu="{StaticResource NodeMenu}" MouseDoubleClick="ContentsList_MouseDoubleClick">
+                            <ListView.View>
+                                <GridView>
+                                    <GridViewColumn Header="Name" Width="176">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Style="{StaticResource Glyph}" Text="{Binding Glyph}" FontSize="13" Foreground="{Binding Accent}"/>
+                                                    <TextBlock Text="{Binding Name}" Margin="8,0,0,0" TextTrimming="CharacterEllipsis" MaxWidth="140" ToolTip="{Binding Name}"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Size" Width="76">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding SizeText}" FontWeight="SemiBold"/>
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Share" Width="86">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding PercentText}" FontSize="11" Foreground="{DynamicResource TextDimBrush}"/>
+                                                    <ProgressBar Value="{Binding Percent, Mode=OneWay}" Maximum="100" Height="4" Width="70"
+                                                                 HorizontalAlignment="Left" Margin="0,3,0,0" Foreground="{Binding Accent}"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Modified" Width="90">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding ModifiedText}" Foreground="{DynamicResource TextDimBrush}" FontSize="12"/>
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                </GridView>
+                            </ListView.View>
+                        </ListView>
+                    </DockPanel>
+                </Border>
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl>

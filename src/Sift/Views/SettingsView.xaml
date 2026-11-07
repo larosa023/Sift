@@ -1,0 +1,157 @@
+<UserControl x:Class="Sift.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <Style x:Key="Row" TargetType="DockPanel">
+            <Setter Property="Margin" Value="0,14,0,0"/>
+            <Setter Property="LastChildFill" Value="True"/>
+        </Style>
+        <Style x:Key="RowCombo" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+            <Setter Property="Width" Value="170"/>
+            <Setter Property="DockPanel.Dock" Value="Right"/>
+            <Setter Property="DisplayMemberPath" Value="Label"/>
+            <Setter Property="SelectedValuePath" Value="Value"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="24,16,24,28" MaxWidth="820" HorizontalAlignment="Left">
+            <TextBlock Style="{StaticResource H1}" Text="Settings"/>
+
+            <!-- Appearance -->
+            <Border Style="{StaticResource Card}" Margin="0,18,0,0">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource H2}" Text="Appearance"/>
+                    <DockPanel Style="{StaticResource Row}">
+                        <ComboBox Style="{StaticResource RowCombo}" ItemsSource="{Binding ThemeChoices}" SelectedValue="{Binding Theme}"/>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Theme"/>
+                            <TextBlock Style="{StaticResource Dim}" Text="Light, dark, or follow your Windows setting."/>
+                        </StackPanel>
+                    </DockPanel>
+                    <StackPanel Margin="0,18,0,0">
+                        <TextBlock Text="Accent colour"/>
+                        <ItemsControl ItemsSource="{Binding Accents}" Margin="0,10,0,0">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <RadioButton Style="{StaticResource Swatch}" GroupName="Accent" Background="{Binding Brush}"
+                                                 IsChecked="{Binding IsSelected}" ToolTip="{Binding Name}"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Deleting -->
+            <Border Style="{StaticResource Card}" Margin="0,14,0,0">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource H2}" Text="Deleting"/>
+                    <CheckBox Margin="0,14,0,0" IsChecked="{Binding PermanentDeleteCaches}">
+                        <StackPanel>
+                            <TextBlock Text="Delete caches and temp files permanently"/>
+                            <TextBlock Style="{StaticResource Dim}" TextWrapping="Wrap" TextTrimming="None"
+                                       Text="Apps rebuild caches on their own, so sending them to the Recycle Bin just moves the space. Other items still go to the Recycle Bin."/>
+                        </StackPanel>
+                    </CheckBox>
+                    <CheckBox Margin="0,14,0,0" IsChecked="{Binding PermanentDelete}">
+                        <StackPanel>
+                            <TextBlock Text="Skip the Recycle Bin for everything"/>
+                            <TextBlock Style="{StaticResource Dim}" TextWrapping="Wrap" TextTrimming="None" Foreground="{DynamicResource WarningBrush}"
+                                       Text="Deleted items can't be restored. Leave this off unless you're sure."/>
+                        </StackPanel>
+                    </CheckBox>
+                </StackPanel>
+            </Border>
+
+            <!-- Rules -->
+            <Border Style="{StaticResource Card}" Margin="0,14,0,0">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource H2}" Text="Cleanup rules"/>
+                    <DockPanel Style="{StaticResource Row}">
+                        <ComboBox Style="{StaticResource RowCombo}" ItemsSource="{Binding DayChoices}" SelectedValue="{Binding GameUnplayedDays}"/>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Unplayed games"/>
+                            <TextBlock Style="{StaticResource Dim}" Text="Flag games you haven't launched in at least…"/>
+                        </StackPanel>
+                    </DockPanel>
+                    <DockPanel Style="{StaticResource Row}">
+                        <ComboBox Style="{StaticResource RowCombo}" ItemsSource="{Binding DayChoices}" SelectedValue="{Binding StaleDownloadDays}"/>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Stale downloads"/>
+                            <TextBlock Style="{StaticResource Dim}" Text="Flag items in Downloads untouched for at least…"/>
+                        </StackPanel>
+                    </DockPanel>
+                    <DockPanel Style="{StaticResource Row}">
+                        <ComboBox Style="{StaticResource RowCombo}" ItemsSource="{Binding DayChoices}" SelectedValue="{Binding LeftoverMinAgeDays}"/>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Leftover app folders"/>
+                            <TextBlock Style="{StaticResource Dim}" Text="Only flag folders that haven't changed in at least…"/>
+                        </StackPanel>
+                    </DockPanel>
+                    <DockPanel Style="{StaticResource Row}">
+                        <ComboBox Style="{StaticResource RowCombo}" ItemsSource="{Binding DuplicateSizeChoices}" SelectedValue="{Binding DuplicateMinBytes}"/>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Duplicate files"/>
+                            <TextBlock Style="{StaticResource Dim}" Text="Ignore files smaller than…"/>
+                        </StackPanel>
+                    </DockPanel>
+                    <DockPanel Style="{StaticResource Row}">
+                        <ComboBox Style="{StaticResource RowCombo}" ItemsSource="{Binding CacheSizeChoices}" SelectedValue="{Binding CacheMinBytes}"/>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Caches"/>
+                            <TextBlock Style="{StaticResource Dim}" Text="Only show caches larger than…"/>
+                        </StackPanel>
+                    </DockPanel>
+                    <CheckBox Margin="0,16,0,0" IsChecked="{Binding DuplicatesSkipSystemFolders}">
+                        <StackPanel>
+                            <TextBlock Text="Skip system, program and app-data folders when finding duplicates"/>
+                            <TextBlock Style="{StaticResource Dim}" Text="Apps and games often ship identical files on purpose. Recommended."/>
+                        </StackPanel>
+                    </CheckBox>
+                </StackPanel>
+            </Border>
+
+            <!-- Updates -->
+            <Border Style="{StaticResource Card}" Margin="0,14,0,0" DataContext="{Binding Updates}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource H2}" Text="Updates"/>
+                    <DockPanel Margin="0,14,0,0">
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button Content="Install update" Style="{StaticResource AccentButton}" Command="{Binding InstallCommand}" Margin="0,0,8,0"/>
+                            <Button Content="Check now" Command="{Binding CheckCommand}"/>
+                        </StackPanel>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="{Binding CurrentVersion, StringFormat='Sift {0}'}"/>
+                            <TextBlock Style="{StaticResource Dim}" Text="{Binding StatusText}" TextWrapping="Wrap" TextTrimming="None"/>
+                        </StackPanel>
+                    </DockPanel>
+                    <CheckBox Margin="0,14,0,0"
+                              IsChecked="{Binding DataContext.AutoCheckUpdates, RelativeSource={RelativeSource AncestorType=UserControl}}">
+                        <StackPanel>
+                            <TextBlock Text="Check for updates when Sift starts"/>
+                            <TextBlock Style="{StaticResource Dim}" Text="Updates come from GitHub Releases and are verified before installing."/>
+                        </StackPanel>
+                    </CheckBox>
+                </StackPanel>
+            </Border>
+
+            <!-- About -->
+            <Border Style="{StaticResource Card}" Margin="0,14,0,0">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource H2}" Text="About"/>
+                    <TextBlock Style="{StaticResource Dim}" Margin="0,8,0,0" TextWrapping="Wrap" TextTrimming="None"
+                               Text="Sift is a fast disk space analyzer and cleanup tool for Windows. Nothing is deleted without your confirmation."/>
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                        <Button Style="{StaticResource LinkButton}" Content="{Binding RepoUrl}" Command="{Binding OpenRepoCommand}"/>
+                        <Button Style="{StaticResource LinkButton}" Content="Open settings folder" Command="{Binding OpenDataFolderCommand}" Margin="20,0,0,0"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

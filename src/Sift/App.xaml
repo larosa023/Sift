@@ -1,0 +1,38 @@
+<Application x:Class="Sift.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Sift"
+             ShutdownMode="OnMainWindowClose">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- [0] is swapped at runtime by ThemeManager -->
+                <ResourceDictionary Source="Themes/Dark.xaml"/>
+                <ResourceDictionary Source="Themes/Styles.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Accent defaults; ThemeManager overwrites these -->
+            <Color x:Key="AccentColor">#6366F1</Color>
+            <SolidColorBrush x:Key="AccentBrush" Color="#6366F1"/>
+            <SolidColorBrush x:Key="AccentHoverBrush" Color="#7C7FF4"/>
+            <SolidColorBrush x:Key="AccentPressedBrush" Color="#5457D8"/>
+            <SolidColorBrush x:Key="AccentSoftBrush" Color="#336366F1"/>
+            <SolidColorBrush x:Key="AccentTextBrush" Color="White"/>
+            <SolidColorBrush x:Key="AccentForegroundBrush" Color="#9294F6"/>
+
+            <local:BoolToVisibilityConverter x:Key="BoolVis"/>
+            <local:BoolToVisibilityConverter x:Key="NotBoolVis" Invert="True"/>
+            <local:NullToVisibilityConverter x:Key="NullVis"/>
+            <local:NullToVisibilityConverter x:Key="NotNullVis" Invert="True"/>
+            <local:EqualsConverter x:Key="Equals"/>
+            <local:BytesConverter x:Key="Bytes"/>
+            <local:RiskToBrushConverter x:Key="RiskBrush"/>
+            <local:RiskToBrushConverter x:Key="RiskSoftBrush" Soft="True"/>
+            <local:PercentToWidthConverter x:Key="PercentWidth"/>
+            <local:StatusToBrushConverter x:Key="StatusBrush"/>
+            <local:CountToVisibilityConverter x:Key="CountVis"/>
+            <local:CountToVisibilityConverter x:Key="ZeroVis" Invert="True"/>
+            <local:NotConverter x:Key="NotBool"/>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
