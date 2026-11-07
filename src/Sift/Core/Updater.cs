@@ -19,6 +19,7 @@ public sealed class Updater
     public static string RepoUrl => $"https://github.com/{Repo}";
 
     private static readonly HttpClient Http = CreateClient();
+    private static readonly HttpClient NoRedirect = CreateClient(followRedirects: false);
 
     public static Version CurrentVersion
     {
@@ -31,9 +32,9 @@ public sealed class Updater
 
     public static string CurrentVersionText => CurrentVersion.ToString(3);
 
-    private static HttpClient CreateClient()
+    private static HttpClient CreateClient(bool followRedirects = true)
     {
-        var c = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+        var c = new HttpClient(new HttpClientHandler { AllowAutoRedirect = followRedirects }) { Timeout = TimeSpan.FromMinutes(10) };
         c.DefaultRequestHeaders.UserAgent.ParseAdd($"Sift-Updater/{CurrentVersionText}");
         c.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
         return c;
@@ -54,9 +55,19 @@ public sealed class Updater
     /// <summary>Returns the latest release if it is newer than the running build, otherwise null.</summary>
     public async Task<UpdateInfo?> CheckAsync(CancellationToken ct = default)
     {
-        using var resp = await Http.GetAsync($"https://api.github.com/repos/{Repo}/releases/latest", ct).ConfigureAwait(false);
+        HttpResponseMessage resp;
+        try
+        {
+            resp = await Http.GetAsync($"https://api.github.com/repos/{Repo}/releases/latest", ct).ConfigureAwait(false);
+        }
+        catch (HttpRequestException)
+        {
+            return await CheckViaRedirectAsync(ct).ConfigureAwait(false);
+        }
+        using var _ = resp;
         if (resp.StatusCode == System.Net.HttpStatusCode.NotFound) return null; // no releases yet
-        resp.EnsureSuccessStatusCode();
+        // The anonymous API allows 60 requests an hour per IP; when it says no, use the release page redirect.
+        if (!resp.IsSuccessStatusCode) return await CheckViaRedirectAsync(ct).ConfigureAwait(false);
         await using var s = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
         using var doc = await JsonDocument.ParseAsync(s, cancellationToken: ct).ConfigureAwait(false);
         var root = doc.RootElement;
@@ -83,6 +94,25 @@ public sealed class Updater
         var notes = root.TryGetProperty("body", out var b) ? b.GetString() ?? "" : "";
         var page = root.TryGetProperty("html_url", out var h) ? h.GetString() ?? RepoUrl : RepoUrl;
         return new UpdateInfo(latest, tag, notes, exe, sum, page, size);
+    }
+
+    /// <summary>
+    /// Fallback that doesn't use the GitHub API: /releases/latest redirects to /releases/tag/vX.Y.Z,
+    /// and assets live at predictable /releases/download/vX.Y.Z/... URLs.
+    /// </summary>
+    private static async Task<UpdateInfo?> CheckViaRedirectAsync(CancellationToken ct)
+    {
+        using var resp = await NoRedirect.GetAsync($"{RepoUrl}/releases/latest", HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        var location = resp.Headers.Location?.ToString();
+        if (location is null)
+        {
+            if (resp.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+            throw new HttpRequestException($"GitHub answered {(int)resp.StatusCode} {resp.ReasonPhrase}");
+        }
+        var tag = location.TrimEnd('/').Split('/').Last();
+        if (!tag.StartsWith('v') || !TryParseTag(tag, out var latest) || latest <= CurrentVersion) return null;
+        var baseUrl = $"{RepoUrl}/releases/download/{tag}";
+        return new UpdateInfo(latest, tag, "", $"{baseUrl}/Sift.exe", $"{baseUrl}/Sift.exe.sha256", $"{RepoUrl}/releases/tag/{tag}", 0);
     }
 
     /// <summary>Downloads and verifies the new exe. Returns the path of the verified file.</summary>
