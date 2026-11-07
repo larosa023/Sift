@@ -38,6 +38,18 @@ jobs:
           dotnet publish src/Sift/Sift.csproj -c Release -r win-x64 -o out
           -p:Version=${{ steps.ver.outputs.version }}
 
+      - name: Smoke test (launch, scan, run checks, recycle, update check)
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP 'smoke.log'
+          $p = Start-Process out/Sift.exe -ArgumentList '--smoke', '"C:\Program Files"', "`"$log`"" -PassThru
+          if (-not $p.WaitForExit(480000)) { $p.Kill(); Write-Host 'Timed out' }
+          if (Test-Path $log) { Get-Content $log }
+          $crash = Join-Path $env:LOCALAPPDATA 'Sift\crash.log'
+          if (Test-Path $crash) { Write-Host '--- crash.log ---'; Get-Content $crash }
+          if ($p.ExitCode -ne 0 -or -not (Select-String -Path $log -Pattern 'SMOKE OK' -Quiet)) { throw "Smoke test failed (exit $($p.ExitCode))" }
+
       - name: Checksum
         shell: pwsh
         run: |
