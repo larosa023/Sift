@@ -618,7 +618,8 @@ public sealed class OverviewViewModel : ObservableObject
                 TaskScheduler.FromCurrentSynchronizationContext());
         }
     }
-    public string LegendTitle => ColorMode == TreemapColorMode.Age ? "Last modified" : "File types"
+    public string LegendTitle => ColorMode == TreemapColorMode.Age ? "Last modified" : "File types";
+
 
     public void NavigateTo(FileNode node, FileNode? select = null)
     {
