@@ -82,7 +82,7 @@ public sealed class OverviewViewModel : ObservableObject
     private readonly ReviewViewModel _review;
     private readonly DispatcherTimer _progressTimer;
     private readonly DispatcherTimer _filterTimer;
-    private DiskScanner? _scanner;
+    private IScanner? _scanner;
     private CancellationTokenSource? _cts;
     private readonly Stopwatch _clock = new();
 
@@ -224,16 +224,23 @@ public sealed class OverviewViewModel : ObservableObject
     public double ProgressPercent { get => _progressPercent; private set => Set(ref _progressPercent, value); }
 
     /// <summary>True when the scan has a known size to measure progress against (a whole drive).</summary>
-    public bool HasProgressEstimate => _expectedBytes > 0;
+    public bool HasProgressEstimate => _expectedBytes > 0 || _scanner?.IsFast == true;
+
+    /// <summary>True when fast scans would be possible if Sift ran as administrator.</summary>
+    public bool ShowFastScanTip => _settings.FastScan && !Native.IsElevated();
+    public bool IsFastScanning => IsScanning && _scanner?.IsFast == true;
 
     private long _expectedBytes;
+    private bool _lastFast;
+    private string? _fastNote;
     private TimeSpan _lastDuration;
     private long _lastErrors, _lastSkipped;
 
     public string ScanSummary => Root is null ? "" :
-        $"{Format.Bytes(Root.Size)} · {Format.Count(Root.FileCount)} files · {Format.Count(Root.FolderCount)} folders · scanned in {Format.Duration(_lastDuration)}"
+        $"{Format.Bytes(Root.Size)} · {Format.Count(Root.FileCount)} files · {Format.Count(Root.FolderCount)} folders · scanned in {Format.Duration(_lastDuration)}{(_lastFast ? " (fast scan)" : "")}"
         + (_lastSkipped > 0 ? $" · {Format.Count(_lastSkipped)} skipped by your settings" : "")
-        + (_lastErrors > 0 ? $" · {Format.Count(_lastErrors)} folders unreadable (try Run as administrator)" : "");
+        + (_lastErrors > 0 && !_lastFast ? $" · {Format.Count(_lastErrors)} folders unreadable (try Run as administrator)" : "")
+        + (_fastNote is null ? "" : " · " + _fastNote);
 
     private string? _error;
     public string? Error { get => _error; set => Set(ref _error, value); }
@@ -460,7 +467,10 @@ public sealed class OverviewViewModel : ObservableObject
             return;
         }
         _cts = new CancellationTokenSource();
-        _scanner = new DiskScanner(_settings.Exclusions);
+        _fastNote = null;
+        _scanner = _settings.FastScan && MftScanner.CanScan(path, out _)
+            ? new MftScanner(_settings.Exclusions)
+            : new DiskScanner(_settings.Exclusions);
         ScanTarget = path;
         _expectedBytes = 0;
         try
@@ -473,15 +483,26 @@ public sealed class OverviewViewModel : ObservableObject
             }
         }
         catch { /* ignore */ }
-        Raise(nameof(HasProgressEstimate));
-
         IsScanning = true;
+        Raise(nameof(HasProgressEstimate), nameof(IsFastScanning));
         _clock.Restart();
         _progressTimer.Start();
         UpdateProgress();
         try
         {
-            var result = await _scanner.ScanAsync(path, _cts.Token);
+            FileNode result;
+            try
+            {
+                result = await _scanner.ScanAsync(path, _cts.Token);
+            }
+            catch (Exception ex) when (_scanner.IsFast && !IsCancel(ex))
+            {
+                // Fast scan isn't possible here (odd layout, locked volume…): fall back to the normal scanner.
+                _fastNote = $"Fast scan unavailable ({ex.Message}); used a normal scan";
+                _scanner = new DiskScanner(_settings.Exclusions);
+                result = await _scanner.ScanAsync(path, _cts.Token);
+            }
+            _lastFast = _scanner.IsFast;
             _lastDuration = _clock.Elapsed;
             _lastErrors = _scanner.Errors;
             _lastSkipped = _scanner.Skipped;
@@ -530,7 +551,9 @@ public sealed class OverviewViewModel : ObservableObject
         ProgressBytes = Format.Bytes(s.Bytes);
         ProgressPath = s.CurrentPath;
         ProgressTime = Format.Duration(_clock.Elapsed);
-        ProgressPercent = _expectedBytes > 0 ? Math.Min(99, s.Bytes * 100.0 / _expectedBytes) : 0;
+        ProgressPercent = s.Fraction is double f ? Math.Min(99, f * 100)
+            : _expectedBytes > 0 ? Math.Min(99, s.Bytes * 100.0 / _expectedBytes) : 0;
+        Raise(nameof(IsFastScanning));
     }
 
     private IReadOnlyList<CategoryStat> BuildCategories(FileNode root)

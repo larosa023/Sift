@@ -8,7 +8,22 @@ namespace Sift.Core;
 /// queue (so every depth of the tree is parallel, with no thread-pool starvation), using the low-allocation
 /// FileSystemEnumerable API. Totals are rolled up in one pass at the end. Junctions/symlinks are never followed.
 /// </summary>
-public sealed class DiskScanner
+public interface IScanner
+{
+    long Files { get; }
+    long Folders { get; }
+    long Bytes { get; }
+    long Errors { get; }
+    long Skipped { get; }
+    string CurrentPath { get; }
+    /// <summary>0–1 when the scanner knows how far along it is, otherwise null.</summary>
+    double? Fraction { get; }
+    /// <summary>True for the NTFS file-table scanner.</summary>
+    bool IsFast { get; }
+    Task<FileNode> ScanAsync(string rootPath, CancellationToken ct);
+}
+
+public sealed class DiskScanner : IScanner
 {
     private readonly EnumerationOptions _options = new()
     {
@@ -41,6 +56,8 @@ public sealed class DiskScanner
     public long Bytes => Interlocked.Read(ref _bytes);
     public long Errors => Interlocked.Read(ref _errors);
     public string CurrentPath => _current;
+    public double? Fraction => null;
+    public bool IsFast => false;
 
     private readonly record struct Entry(string Name, bool IsDirectory, long Length, long Ticks, FileAttributes Attributes);
     private readonly record struct Work(FileNode Node, string Path);
@@ -168,7 +185,7 @@ public sealed class DiskScanner
     }
 
     /// <summary>Post-order pass: folder sizes, counts and newest-write, then sort children by size.</summary>
-    private static void RollUp(FileNode root)
+    internal static void RollUp(FileNode root)
     {
         var stack = new Stack<(FileNode Node, bool Visited)>();
         stack.Push((root, false));

@@ -22,6 +22,8 @@ public sealed class AppSettings
     public bool PermanentDeleteCaches { get; set; }
 
     public bool AutoCheckUpdates { get; set; } = true;
+    /// <summary>Read the NTFS file table directly when running as administrator.</summary>
+    public bool FastScan { get; set; } = true;
     public string? SkippedVersion { get; set; }
     public string? LastTarget { get; set; }
     /// <summary>Most recent first.</summary>

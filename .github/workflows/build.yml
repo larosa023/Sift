@@ -50,6 +50,14 @@ jobs:
           if (Test-Path $crash) { Write-Host '--- crash.log ---'; Get-Content $crash }
           if ($p.ExitCode -ne 0 -or -not (Select-String -Path $log -Pattern 'SMOKE OK' -Quiet)) { throw "Smoke test failed (exit $($p.ExitCode))" }
 
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: ${{ runner.temp }}/shots/*.png
+          if-no-files-found: ignore
+
       - name: Updater test (old build updates itself to the latest release)
         if: github.event_name != 'pull_request'
         shell: pwsh
@@ -72,6 +80,7 @@ jobs:
         run: |
           $h = (Get-FileHash out/Sift.exe -Algorithm SHA256).Hash.ToLower()
           "$h  Sift.exe" | Out-File -Encoding ascii -NoNewline out/Sift.exe.sha256
+          "$h  Sift.exe" | Out-File -Encoding ascii out/SHA256SUMS.txt
           Get-Item out/Sift.exe | Select-Object Name, Length
 
       - uses: actions/upload-artifact@v4
@@ -80,6 +89,7 @@ jobs:
           path: |
             out/Sift.exe
             out/Sift.exe.sha256
+            out/SHA256SUMS.txt
 
       - name: Is this version already released?
         id: rel
@@ -111,3 +121,4 @@ jobs:
           files: |
             out/Sift.exe
             out/Sift.exe.sha256
+            out/SHA256SUMS.txt

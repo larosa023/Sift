@@ -115,6 +115,34 @@ internal sealed class SmokeTest
         await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
     }
 
+    private int _shot;
+    private Window? _window;
+
+    /// <summary>Saves a PNG of the window so CI can show what each page looks like.</summary>
+    private async Task Snap(string name)
+    {
+        if (_window?.Content is not FrameworkElement root) return;
+        await Settle();
+        try
+        {
+            var dir = Path.Combine(Path.GetDirectoryName(_log) ?? Path.GetTempPath(), "shots");
+            Directory.CreateDirectory(dir);
+            int w = (int)Math.Ceiling(root.ActualWidth), h = (int)Math.Ceiling(root.ActualHeight);
+            if (w <= 0 || h <= 0) return;
+            var bmp = new System.Windows.Media.Imaging.RenderTargetBitmap(w, h, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+            var bg = new System.Windows.Media.DrawingVisual();
+            using (var dc = bg.RenderOpen())
+                dc.DrawRectangle(_window.Background, null, new Rect(0, 0, w, h));
+            bmp.Render(bg);
+            bmp.Render(root);
+            var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
+            enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bmp));
+            using var fs = File.Create(Path.Combine(dir, $"{++_shot:00}-{name}.png"));
+            enc.Save(fs);
+        }
+        catch (Exception ex) { Write("     snap failed: " + ex.Message); }
+    }
+
     private void Check(bool ok, string what)
     {
         Write((ok ? "ok   " : "FAIL ") + what);
@@ -126,6 +154,9 @@ internal sealed class SmokeTest
         try
         {
             File.WriteAllText(_log, $"Sift {Updater.CurrentVersionText} smoke test\n");
+            _window = window;
+            window.WindowState = WindowState.Normal;
+            window.Width = 1440; window.Height = 900;
             PresentationTraceSources.Refresh();
             PresentationTraceSources.DataBindingSource.Listeners.Add(new BindingListener(_bindingErrors));
             PresentationTraceSources.DataBindingSource.Switch.Level = SourceLevels.Error;
@@ -133,6 +164,8 @@ internal sealed class SmokeTest
             await Settle();
             foreach (var p in Enum.GetValues<Page>()) { vm.CurrentPage = p; await Settle(); }
             Check(true, "all pages rendered");
+            vm.CurrentPage = Page.Overview;
+            await Snap("start");
 
             vm.CurrentPage = Page.Settings;
             foreach (var t in vm.SettingsPage.Themes)
@@ -155,6 +188,44 @@ internal sealed class SmokeTest
             sw.Restart();
             await vm.Overview.ScanAsync(_folder);
             Write($"     rescan took {sw.ElapsedMilliseconds} ms (warm) · {vm.Overview.ScanSummary}");
+            await Snap("overview");
+
+            // ---- Fast (MFT) scanner vs the folder-by-folder scanner on the same folder.
+            Write($"     elevated: {Native.IsElevated()} · fast scan possible: {MftScanner.CanScan(_folder, out var whyNot)} {whyNot}");
+            if (MftScanner.CanScan(_folder, out _))
+            {
+                var slow = await new DiskScanner().ScanAsync(_folder, CancellationToken.None);
+                sw.Restart();
+                var fast = await new MftScanner().ScanAsync(_folder, CancellationToken.None);
+                long fastMs = sw.ElapsedMilliseconds;
+                Write($"     normal: {slow.FileCount:N0} files {slow.FolderCount:N0} folders {slow.Size:N0} bytes");
+                Write($"     fast:   {fast.FileCount:N0} files {fast.FolderCount:N0} folders {fast.Size:N0} bytes ({fastMs} ms incl. reading the whole C: table)");
+                if (fast.FileCount != slow.FileCount || fast.Size != slow.Size)
+                {
+                    var slowKids = slow.Children!.ToDictionary(c => c.Name, StringComparer.OrdinalIgnoreCase);
+                    foreach (var c in fast.Children!)
+                    {
+                        slowKids.TryGetValue(c.Name, out var o);
+                        if (o is null || o.Size != c.Size || o.FileCount != c.FileCount)
+                            Write($"     diff {c.Name}: fast {c.FileCount}/{c.Size} normal {o?.FileCount}/{o?.Size}");
+                    }
+                }
+                double sizeDiff = Math.Abs(fast.Size - slow.Size) / (double)Math.Max(1, slow.Size);
+                Check(fast.FileCount == slow.FileCount && fast.FolderCount == slow.FolderCount && sizeDiff < 0.001,
+                      "fast scan matches normal scan");
+                var anyFile = slow.EnumerateFiles().Skip(slow.FileCount > 10 ? 7 : 0).First();
+                var same = fast.Find(anyFile.FullPath);
+                Check(same is not null && same.Size == anyFile.Size && Math.Abs(same.LastWriteTicks - anyFile.LastWriteTicks) < TimeSpan.TicksPerSecond * 2,
+                      $"fast scan file details match ({anyFile.Name})");
+
+                sw.Restart();
+                var drive = new MftScanner();
+                var whole = await drive.ScanAsync("C:\\", CancellationToken.None);
+                Write($"     fast scan of all of C:\\ — {whole.FileCount:N0} files, {whole.FolderCount:N0} folders, {Format.Bytes(whole.Size)} in {sw.ElapsedMilliseconds:N0} ms");
+                var di = new DriveInfo("C");
+                Write($"     drive reports {Format.Bytes(di.TotalSize - di.TotalFreeSpace)} used");
+                Check(whole.FileCount > 100_000, "fast whole-drive scan");
+            }
             await Settle();
             var firstDir = vm.Overview.Root!.Children?.FirstOrDefault(c => c.IsDirectory);
             if (firstDir is not null) { vm.Overview.NavigateTo(firstDir); await Settle(); vm.Overview.UpCommand.Execute(null); await Settle(); }
@@ -204,6 +275,8 @@ internal sealed class SmokeTest
                 Check(f.Error is null, $"finder {f.Id} ran");
             }
             foreach (var f in vm.Cleanup.Finders) { vm.Cleanup.Selected = f; await Settle(); }
+            vm.Cleanup.Selected = vm.Cleanup.Finders.OrderByDescending(f => f.Count).First();
+            await Snap("cleanup");
 
             // Review + Recycle Bin round trip on a throwaway file.
             var tmpDir = Path.Combine(Path.GetTempPath(), "sift-smoke-" + Guid.NewGuid().ToString("N")[..8]);
@@ -222,6 +295,7 @@ internal sealed class SmokeTest
             var item = vm.Review.Items.FirstOrDefault();
             Write($"     review result: {vm.Review.ResultText} / {item?.StatusText}");
             Check(!File.Exists(tmp), "file moved to Recycle Bin");
+            await Snap("review");
             try { Directory.Delete(tmpDir, true); } catch { /* ignore */ }
 
             var (binSize, binItems) = Native.RecycleBinInfo();
@@ -232,6 +306,10 @@ internal sealed class SmokeTest
             await vm.Update.CheckAsync(manual: true);
             Write($"     updater: {vm.Update.StatusText}");
             Check(vm.Update.State is UpdateState.UpToDate or UpdateState.Available, "update check");
+            await Snap("settings");
+            vm.SettingsPage.SelectTheme("light"); vm.CurrentPage = Page.Overview;
+            await Snap("overview-light");
+            vm.SettingsPage.SelectTheme("dark");
             await Settle();
 
             foreach (var b in _bindingErrors.Distinct().Take(40)) Write("     binding: " + b);

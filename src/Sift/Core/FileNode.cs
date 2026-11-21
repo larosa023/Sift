@@ -11,8 +11,8 @@ public sealed class FileNode
     }
 
     /// <summary>File/folder name. For the scan root this is the full path.</summary>
-    public string Name { get; }
-    public FileNode? Parent { get; private set; }
+    public string Name { get; private set; }
+    public FileNode? Parent { get; internal set; }
     public bool IsDirectory { get; }
     public long Size { get; internal set; }
     public long FileCount { get; internal set; }
@@ -95,6 +95,14 @@ public sealed class FileNode
             node = next;
         }
         return node;
+    }
+
+    /// <summary>Cuts this node out of its tree and makes it a root named by its full path (used for sub-folder scans).</summary>
+    internal void BecomeRoot(string fullPath)
+    {
+        if (Parent is not null) Parent.Children?.Remove(this);
+        Parent = null;
+        Name = fullPath;
     }
 
     /// <summary>Removes this node from the tree and subtracts its totals from every ancestor.</summary>
