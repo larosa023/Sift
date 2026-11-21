@@ -1,0 +1,85 @@
+Sift 1.2.0 smoke test
+ok   all pages rendered
+ok   theme system
+ok   theme dark
+ok   theme light
+ok   theme midnight
+ok   theme frost
+ok   theme twilight
+ok   theme forest
+ok   theme sunset
+ok   theme ocean
+ok   theme rose
+ok   theme graphite
+ok   theme paper
+ok   theme mist
+ok   theme mocha
+ok   theme contrast
+ok   all accents incl. Windows accent
+ok   custom theme file loaded
+ok   custom theme applied
+ok   custom theme's own accent
+ok   follows Hangar's theme (ocean)
+ok   picks up Hangar theme changes live
+ok   Explorer menu added
+ok   Explorer menu removed
+ok   fixture scan (7.63 MB · 5 files · 3 folders · scanned in 8.7s (fast scan))
+ok   duplicates found (2)
+ok   duplicates again (hash cache)
+ok   large old files (old-video.mkv)
+     windows extras: 
+ok   previous scan loaded for comparison
+     change: big.bin removed (b)
+     change: new.bin new (a)
+ok   changes since the previous scan
+ok   file types view
+ok   type → largest files of that type
+ok   wildcard search through subfolders
+ok   colour by age legend (Last week, 1–3 years)
+ok   saved scan reopened (6.68 MB · 5 files · 3 folders · saved scan from just now)
+ok   recycled (undo available)
+     undo: Restored 1 item to where they were
+ok   undo restored the file from the Recycle Bin
+ok   scan C:\Program Files\dotnet: 12.6 GB · 77,920 files · 11,302 folders · scanned in 3.5s (fast scan) 
+     scan took 3546 ms (cold)
+     rescan took 3617 ms (warm) · 12.6 GB · 77,920 files · 11,302 folders · scanned in 3.6s (fast scan)
+     elevated: True · fast scan possible: True 
+     normal: 77,920 files 11,302 folders 13,578,924,709 bytes
+     fast:   77,920 files 11,302 folders 13,578,924,709 bytes (3726 ms incl. reading the whole C: table)
+ok   fast scan matches normal scan
+ok   fast scan file details match (WorkloadManifest.json)
+     fast scan of all of C:\ — 1,145,458 files, 208,711 folders, 133 GB in 3,772 ms
+     drive reports 120 GB used
+ok   fast whole-drive scan
+ok   treemap navigation
+ok   sort by name
+ok   largest files mode (250 rows, biggest 177 MB)
+ok   filter (250 matches)
+ok   CSV export
+ok   legend highlight
+ok   Esc clears highlight
+ok   exclusion skips C:\Program Files\dotnet\packs
+ok   recent scans recorded
+     Oversized caches: 3 items · 624 MB
+ok   finder caches ran
+     Windows extras: Nothing found
+ok   finder windows ran
+     Unplayed games: Nothing found
+ok   finder games ran
+     Large old files: Nothing found
+ok   finder largeold ran
+     Duplicate files: Nothing found
+ok   finder duplicates ran
+     Stale downloads: Nothing found
+ok   finder downloads ran
+     Leftover app folders: Nothing found
+ok   finder leftovers ran
+ok   confirmation shown before delete
+     review result: Moved 4.00 KB to the Recycle Bin · C: now has 29.6 GB free / In Recycle Bin · 4.00 KB
+ok   file moved to Recycle Bin
+     recycle bin: 1 items, 4.00 KB · 4.00 KB in 1 item — this space is only freed once the Recycle Bin is emptied.
+ok   Recycle Bin size query
+     updater: You're on the latest version (1.2.0).
+ok   update check
+ok   no binding errors
+SMOKE OK
