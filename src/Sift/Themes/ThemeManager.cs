@@ -157,9 +157,10 @@ public static class ThemeManager
     /// <summary>Keeps an accent visible against the theme (as Hangar does).</summary>
     private static Color Readable(Color c)
     {
-        double l = Luminance(c);
-        if (IsDark && l < 0.30) return Shift(c, 0.35);
-        if (!IsDark && l > 0.75) return Shift(c, -0.35);
+        // HSL lightness, so vivid colours (pure magenta, red) aren't mistaken for dark ones.
+        double l = (Math.Max(c.R, Math.Max(c.G, c.B)) + Math.Min(c.R, Math.Min(c.G, c.B))) / 510.0;
+        if (IsDark && l < 0.28) return Shift(c, 0.35);
+        if (!IsDark && l > 0.82) return Shift(c, -0.35);
         return c;
     }
 
