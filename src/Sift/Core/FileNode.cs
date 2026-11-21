@@ -25,7 +25,16 @@ public sealed class FileNode
     public bool IsRoot => Parent is null;
     public DateTime LastWriteUtc => LastWriteTicks > 0 ? new DateTime(LastWriteTicks, DateTimeKind.Utc) : DateTime.MinValue;
     public string Extension => IsDirectory ? string.Empty : System.IO.Path.GetExtension(Name).ToLowerInvariant();
-    public FileCategory Category => IsDirectory ? FileCategory.Folder : FileCategories.Of(Extension);
+    private byte _category = 255;
+    /// <summary>Cached: the treemap and the legend ask for this millions of times.</summary>
+    public FileCategory Category
+    {
+        get
+        {
+            if (_category == 255) _category = (byte)(IsDirectory ? FileCategory.Folder : FileCategories.Of(System.IO.Path.GetExtension(Name)));
+            return (FileCategory)_category;
+        }
+    }
     public string DisplayName => IsRoot ? Name : Name;
 
     public string FullPath

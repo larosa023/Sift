@@ -134,17 +134,24 @@ public sealed class CleanupViewModel : ObservableObject
 {
     private readonly ReviewViewModel _review;
 
+    private readonly Func<FileNode?> _scan;
+    /// <summary>Checks that work from scan results are skipped by "Run all" until there is a scan.</summary>
+    public bool HasScan => _scan() is not null;
+
     public CleanupViewModel(AppSettings settings, ReviewViewModel review, Func<FileNode?> scan)
     {
         _review = review;
+        _scan = scan;
         FinderContext Ctx() => new() { Settings = settings, Scan = scan() };
         Finders = new ObservableCollection<FinderViewModel>(new ICleanupFinder[]
         {
-            new GameFinder(),
-            new DuplicateFinder(),
-            new LeftoverFinder(),
             new CacheFinder(),
+            new WindowsExtrasFinder(),
+            new GameFinder(),
+            new LargeOldFilesFinder(),
+            new DuplicateFinder(),
             new StaleDownloadsFinder(),
+            new LeftoverFinder(),
         }.Select(f => new FinderViewModel(f, Ctx)));
         foreach (var f in Finders) f.PropertyChanged += (_, e) => { if (e.PropertyName is nameof(FinderViewModel.TotalSize) or nameof(FinderViewModel.IsRunning)) RaiseSummary(); };
         _selected = Finders[0];
@@ -204,10 +211,11 @@ public sealed class CleanupViewModel : ObservableObject
     public async Task RunAllAsync()
     {
         // Run independent checks side by side; duplicates last since it reads file contents.
-        var first = Finders.Where(f => f.Id != "duplicates").Select(f => f.RunAsync()).ToList();
+        // Independent checks side by side; duplicates last since it reads file contents.
+        var first = Finders.Where(f => f.Id != "duplicates" && (!f.NeedsScan || HasScan)).Select(f => f.RunAsync()).ToList();
         await Task.WhenAll(first);
         var dup = Finders.FirstOrDefault(f => f.Id == "duplicates");
-        if (dup is not null) await dup.RunAsync();
+        if (dup is not null && HasScan) await dup.RunAsync();
     }
 
     private void AddSelectedToReview() => Queue(Selected.Items.Where(i => i.IsSelected).ToList());
@@ -226,6 +234,10 @@ public sealed class CleanupViewModel : ObservableObject
                 Action = i.Action,
                 UninstallUri = i.UninstallUri,
                 UninstallLabel = i.UninstallLabel,
+                Command = i.Command,
+                CommandArgs = i.CommandArgs,
+                CommandElevated = i.CommandElevated,
+                CommandFrees = i.CommandFrees,
                 Risk = i.Risk,
                 Origin = i,
             });

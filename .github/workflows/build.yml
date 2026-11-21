@@ -50,6 +50,23 @@ jobs:
           if (Test-Path $crash) { Write-Host '--- crash.log ---'; Get-Content $crash }
           if ($p.ExitCode -ne 0 -or -not (Select-String -Path $log -Pattern 'SMOKE OK' -Quiet)) { throw "Smoke test failed (exit $($p.ExitCode))" }
 
+      - name: Single instance, hand-over and --quit
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          $exe = (Resolve-Path out/Sift.exe).Path
+          $first = Start-Process $exe -PassThru
+          Start-Sleep -Seconds 8
+          $second = Start-Process $exe -ArgumentList '"C:\Windows\Fonts"' -PassThru
+          if (-not $second.WaitForExit(20000)) { $second.Kill(); throw 'A second launch did not hand its folder to the running Sift' }
+          Write-Host "second launch handed over and exited ($($second.ExitCode))"
+          if ($first.HasExited) { throw 'The running Sift exited unexpectedly' }
+          $quit = Start-Process $exe -ArgumentList '--quit' -PassThru -Wait
+          Write-Host "--quit exited with $($quit.ExitCode)"
+          if (-not $first.WaitForExit(20000)) { $first.Kill(); throw 'Sift did not close on --quit' }
+          if ($quit.ExitCode -ne 0) { throw '--quit reported a failure' }
+          Write-Host 'Single instance OK'
+
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -57,6 +74,27 @@ jobs:
           name: screenshots
           path: ${{ runner.temp }}/shots/*.png
           if-no-files-found: ignore
+
+      # Artifacts live on blob storage; a branch is easier to pull from anywhere git works.
+      - name: Publish screenshots to the ci-screenshots branch
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $shots = Join-Path $env:RUNNER_TEMP 'shots'
+          if (-not (Test-Path $shots)) { exit 0 }
+          $d = Join-Path $env:RUNNER_TEMP 'shotrepo'
+          New-Item -ItemType Directory $d | Out-Null
+          Copy-Item "$shots\*.png" $d
+          Copy-Item (Join-Path $env:RUNNER_TEMP 'smoke.log') $d -ErrorAction SilentlyContinue
+          Set-Location $d
+          git init -q -b ci-screenshots
+          git config user.name "github-actions"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Screenshots for $env:GITHUB_SHA"
+          git push -q -f "https://x-access-token:$env:GH_TOKEN@github.com/$env:GITHUB_REPOSITORY.git" ci-screenshots
 
       - name: Updater test (old build updates itself to the latest release)
         if: github.event_name != 'pull_request'

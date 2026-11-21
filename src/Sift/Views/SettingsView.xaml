@@ -75,37 +75,65 @@
             <!-- Appearance -->
             <Border Style="{StaticResource Card}" Margin="0,18,0,0">
                 <StackPanel>
-                    <TextBlock Style="{StaticResource H2}" Text="Theme"/>
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
+                            <Button Style="{StaticResource GhostButton}" Command="{Binding OpenThemesFolderCommand}"
+                                    ToolTip="Custom themes are JSON files in Hangar's theme format">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Style="{StaticResource Glyph}" Text="&#xE838;" FontSize="12"/>
+                                    <TextBlock Text="Theme files" Margin="8,0,0,0"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Style="{StaticResource GhostButton}" Command="{Binding ReloadThemesCommand}" Margin="4,0,0,0" ToolTip="Load new or edited theme files">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Style="{StaticResource Glyph}" Text="&#xE72C;" FontSize="12"/>
+                                    <TextBlock Text="Reload" Margin="8,0,0,0"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource H2}" Text="Theme"/>
+                            <TextBlock Style="{StaticResource Dim}" Margin="0,4,0,0" TextWrapping="Wrap" TextTrimming="None"
+                                       Text="The same themes as Hangar and the rest of the suite. Theme files from Hangar's themes folder show up here too."/>
+                        </StackPanel>
+                    </DockPanel>
                     <ItemsControl ItemsSource="{Binding Themes}" Margin="0,14,0,0">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <RadioButton Style="{StaticResource ThemeTile}" IsChecked="{Binding IsSelected}"/>
+                                <RadioButton Style="{StaticResource ThemeTile}" IsChecked="{Binding IsSelected}" ToolTip="{Binding Tip}"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
                     <TextBlock Text="Accent colour" Margin="0,8,0,0"/>
-                    <ItemsControl ItemsSource="{Binding Accents}" Margin="0,10,0,0">
+                    <ItemsControl ItemsSource="{Binding Accents}" Margin="0,10,0,0" IsEnabled="{Binding AccentsEnabled}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Grid>
+                                <Grid Visibility="{Binding IsVisible, Converter={StaticResource BoolVis}}">
                                     <RadioButton Style="{StaticResource Swatch}" GroupName="Accent" Background="{Binding Brush}"
                                                  IsChecked="{Binding IsSelected}" ToolTip="{Binding Name}"/>
-                                    <TextBlock Style="{StaticResource Glyph}" Text="&#xE770;" FontSize="11" Foreground="White"
+                                    <TextBlock Style="{StaticResource Glyph}" Text="{Binding Glyph}" FontSize="11" Foreground="White"
                                                HorizontalAlignment="Center" Margin="0,0,8,0" IsHitTestVisible="False"
-                                               Visibility="{Binding IsWindows, Converter={StaticResource BoolVis}}"/>
+                                               Visibility="{Binding HasGlyph, Converter={StaticResource BoolVis}}"/>
                                 </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                    <TextBlock Style="{StaticResource Dim}" Margin="0,8,0,0" TextWrapping="Wrap" TextTrimming="None"
-                               Text="The first swatch follows your Windows accent colour (Settings › Personalization › Colors)."/>
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0" IsEnabled="{Binding AccentsEnabled}">
+                        <TextBlock Text="Custom" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                        <TextBox Width="110" Text="{Binding CustomAccentText, UpdateSourceTrigger=PropertyChanged}" FontFamily="Cascadia Mono, Consolas"
+                                 ToolTip="Any colour as #RRGGBB"/>
+                        <Button Content="Use" Margin="8,0,0,0" Command="{Binding ApplyCustomAccentCommand}"/>
+                        <TextBlock Text="{Binding CustomAccentError}" Foreground="{DynamicResource DangerBrush}" VerticalAlignment="Center" Margin="10,0,0,0"
+                                   Visibility="{Binding CustomAccentError, Converter={StaticResource NullVis}}"/>
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource Dim}" Margin="0,10,0,0" TextWrapping="Wrap" TextTrimming="None" Text="{Binding AccentNote}"/>
                 </StackPanel>
             </Border>
 
@@ -125,6 +153,38 @@
                             <TextBlock Text="Skip the Recycle Bin for everything"/>
                             <TextBlock Style="{StaticResource Dim}" TextWrapping="Wrap" TextTrimming="None" Foreground="{DynamicResource WarningBrush}"
                                        Text="Deleted items can't be restored. Leave this off unless you're sure."/>
+                        </StackPanel>
+                    </CheckBox>
+                </StackPanel>
+            </Border>
+
+            <!-- Scan speed & history -->
+            <Border Style="{StaticResource Card}" Margin="0,14,0,0">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource H2}" Text="Scanning"/>
+                    <CheckBox Margin="0,14,0,0" IsChecked="{Binding FastScan}">
+                        <StackPanel>
+                            <TextBlock Text="Fast scan on NTFS drives when running as administrator"/>
+                            <TextBlock Style="{StaticResource Dim}" TextWrapping="Wrap" TextTrimming="None"
+                                       Text="Reads the drive's file table directly instead of opening every folder — whole drives in seconds, including folders Windows normally won't list. Falls back to a normal scan if it can't."/>
+                        </StackPanel>
+                    </CheckBox>
+                    <CheckBox Margin="0,14,0,0" IsChecked="{Binding RememberScans}">
+                        <StackPanel>
+                            <TextBlock Text="Remember scans"/>
+                            <TextBlock Style="{StaticResource Dim}" TextWrapping="Wrap" TextTrimming="None"
+                                       Text="Sift opens with your last results straight away and can show what grew or shrank since the scan before."/>
+                        </StackPanel>
+                    </CheckBox>
+                    <StackPanel Orientation="Horizontal" Margin="28,8,0,0">
+                        <TextBlock Text="{Binding SavedScansText}" Style="{StaticResource Faint}" VerticalAlignment="Center"/>
+                        <Button Style="{StaticResource LinkButton}" Content="Clear saved scans" Margin="12,0,0,0" Command="{Binding ClearSavedScansCommand}"/>
+                    </StackPanel>
+                    <CheckBox Margin="0,14,0,0" IsChecked="{Binding ExplorerMenuEnabled}">
+                        <StackPanel>
+                            <TextBlock Text="Add “Analyze with Sift” to File Explorer"/>
+                            <TextBlock Style="{StaticResource Dim}" TextWrapping="Wrap" TextTrimming="None"
+                                       Text="Right-click any folder or drive to scan it. On Windows 11 it's under “Show more options”."/>
                         </StackPanel>
                     </CheckBox>
                 </StackPanel>
@@ -191,6 +251,20 @@
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="Leftover app folders"/>
                             <TextBlock Style="{StaticResource Dim}" Text="Only flag folders that haven't changed in at least…"/>
+                        </StackPanel>
+                    </DockPanel>
+                    <DockPanel Style="{StaticResource Row}">
+                        <ComboBox Style="{StaticResource RowCombo}" ItemsSource="{Binding LargeSizeChoices}" SelectedValue="{Binding LargeOldMinBytes}"/>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Large old files: size"/>
+                            <TextBlock Style="{StaticResource Dim}" Text="Only files at least this big…"/>
+                        </StackPanel>
+                    </DockPanel>
+                    <DockPanel Style="{StaticResource Row}">
+                        <ComboBox Style="{StaticResource RowCombo}" ItemsSource="{Binding DayChoices}" SelectedValue="{Binding LargeOldDays}"/>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Large old files: age"/>
+                            <TextBlock Style="{StaticResource Dim}" Text="…and not modified for at least"/>
                         </StackPanel>
                     </DockPanel>
                     <DockPanel Style="{StaticResource Row}">

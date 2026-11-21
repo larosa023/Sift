@@ -56,3 +56,36 @@ public static class CategoryPalette
         return b;
     }
 }
+
+public enum TreemapColorMode { Type, Age }
+
+/// <summary>Age buckets for "colour by age": warm = recently changed, cool = untouched for years.</summary>
+public static class AgePalette
+{
+    public static readonly (string Name, double MaxDays, Color Color)[] Buckets =
+    {
+        ("Last week", 7, Color.FromRgb(0xF2, 0x6D, 0x4F)),
+        ("Last month", 31, Color.FromRgb(0xF0, 0x9A, 0x3E)),
+        ("Last 6 months", 183, Color.FromRgb(0xD9, 0xC1, 0x45)),
+        ("Last year", 366, Color.FromRgb(0x6D, 0xC0, 0x7A)),
+        ("1–3 years", 1096, Color.FromRgb(0x3F, 0x9F, 0xC7)),
+        ("Older", double.MaxValue, Color.FromRgb(0x5B, 0x6C, 0xD6)),
+    };
+
+    private static readonly Brush[] Solid = Buckets.Select(b => Frozen(new SolidColorBrush(b.Color))).ToArray();
+    private static readonly Brush[] Cushion = Buckets.Select(b => Frozen(new LinearGradientBrush(
+        Themes.ThemeManager.Shift(b.Color, 0.18), Themes.ThemeManager.Shift(b.Color, -0.18), new Point(0, 0), new Point(1, 1)))).ToArray();
+
+    private static Brush Frozen(Brush b) { b.Freeze(); return b; }
+
+    public static int BucketOf(long lastWriteTicks, long nowTicks)
+    {
+        if (lastWriteTicks <= 0) return Buckets.Length - 1;
+        double days = (nowTicks - lastWriteTicks) / (double)TimeSpan.TicksPerDay;
+        for (int i = 0; i < Buckets.Length; i++) if (days <= Buckets[i].MaxDays) return i;
+        return Buckets.Length - 1;
+    }
+
+    public static Brush SolidBrush(int bucket) => Solid[Math.Clamp(bucket, 0, Solid.Length - 1)];
+    public static Brush CushionBrush(int bucket) => Cushion[Math.Clamp(bucket, 0, Cushion.Length - 1)];
+}

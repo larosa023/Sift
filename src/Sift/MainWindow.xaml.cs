@@ -83,6 +83,9 @@ public partial class MainWindow : Window
                     _vm.CurrentPage = Page.Overview;
                     Dispatcher.InvokeAsync(() => OverviewPage.FocusFilter(), System.Windows.Threading.DispatcherPriority.Input);
                     e.Handled = true; return;
+                case Key.Z when !typing && _vm.Review.CanUndo:
+                    _vm.CurrentPage = Page.Review;
+                    _ = _vm.Review.UndoAsync(); e.Handled = true; return;
                 case Key.E when onOverview && !typing && ov.OpenInExplorerCommand.CanExecute(null):
                     ov.OpenInExplorerCommand.Execute(null); e.Handled = true; return;
             }

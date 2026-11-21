@@ -24,6 +24,7 @@ public sealed class MainViewModel : ObservableObject
             Toast = $"{path} will be skipped in future scans · change this in Settings";
         };
 
+        Review.ItemsRestored += n => Toast = $"Restored {n} item{(n == 1 ? "" : "s")} · rescan (F5) to see them in the map";
         Review.ItemsDeleted += deleted =>
         {
             Overview.ApplyDeletions(deleted);
@@ -79,8 +80,11 @@ public sealed class MainViewModel : ObservableObject
     public string ReviewBadge => Review.PendingCount > 99 ? "99+" : Review.PendingCount.ToString();
     public bool HasReviewBadge => Review.PendingCount > 0;
 
-    public async void OnStartup()
+    /// <param name="path">A folder to scan straight away (from the command line or Explorer), or null.</param>
+    public async void OnStartup(string? path = null)
     {
+        if (path is not null) _ = Overview.ScanAsync(path);
+        else await Overview.RestoreLastAsync();
         if (Settings.AutoCheckUpdates)
         {
             await Task.Delay(TimeSpan.FromSeconds(4));

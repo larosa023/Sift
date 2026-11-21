@@ -9,20 +9,26 @@ namespace Sift.Themes;
 public static class ThemeManager
 {
     public const string WindowsAccent = "windows";
+    public const string ThemeAccent = "theme";
 
+    /// <summary>Hangar's accent swatches, so a colour picked in one app exists in all of them.</summary>
     public static readonly (string Name, string Hex)[] Accents =
     {
+        ("Theme's own", ThemeAccent),
         ("Windows accent", WindowsAccent),
-        ("Indigo", "#6366F1"),
-        ("Sky", "#0EA5E9"),
-        ("Teal", "#14B8A6"),
-        ("Emerald", "#22C55E"),
-        ("Amber", "#F59E0B"),
-        ("Orange", "#F97316"),
-        ("Rose", "#F43F5E"),
-        ("Violet", "#A855F7"),
-        ("Slate", "#64748B"),
+        ("Blue", "#4F8CFF"),
+        ("Violet", "#9B6CF2"),
+        ("Pink", "#E86A92"),
+        ("Red", "#FF5D5D"),
+        ("Orange", "#FF8A4C"),
+        ("Gold", "#F2B84B"),
+        ("Green", "#3FB98E"),
+        ("Teal", "#2EC4C4"),
+        ("Gray", "#A0A0AA"),
     };
+
+    /// <summary>Accent actually in use (after resolving "theme", "windows" or Hangar's choice).</summary>
+    public static string EffectiveAccent { get; private set; } = ThemeAccent;
 
     public static bool IsDark { get; private set; }
     public static ThemeInfo Current { get; private set; } = ThemeCatalog.Find("dark");
@@ -37,11 +43,19 @@ public static class ThemeManager
     public static void Apply(string themeId, string accent)
     {
         CurrentThemeId = string.IsNullOrWhiteSpace(themeId) ? ThemeCatalog.SystemId : themeId.Trim().ToLowerInvariant();
-        CurrentAccent = string.IsNullOrWhiteSpace(accent) ? "#6366F1" : accent;
+        CurrentAccent = string.IsNullOrWhiteSpace(accent) ? ThemeAccent : accent;
 
-        var theme = Resolve(CurrentThemeId);
+        ThemeInfo theme;
+        string effectiveAccent = CurrentAccent;
+        if (CurrentThemeId == ThemeCatalog.HangarId && ThemeCatalog.ReadHangar() is { } h)
+        {
+            theme = h.Theme;
+            effectiveAccent = h.Accent; // Hangar decides the accent too
+        }
+        else theme = Resolve(CurrentThemeId);
         Current = theme;
         IsDark = theme.IsDark;
+        EffectiveAccent = effectiveAccent;
 
         var dict = new ResourceDictionary();
         foreach (var (key, hex) in theme.Colors)
@@ -55,7 +69,8 @@ public static class ThemeManager
         var merged = app.Resources.MergedDictionaries;
         if (merged.Count > 0) merged[0] = dict; else merged.Add(dict);
 
-        ApplyAccent(CurrentAccent);
+        ApplyAccent(effectiveAccent);
+        WatchHangar(CurrentThemeId == ThemeCatalog.HangarId);
         foreach (Window w in app.Windows) ApplyFrame(w);
 
         if (!_watching)
@@ -63,7 +78,8 @@ public static class ThemeManager
             _watching = true;
             SystemEvents.UserPreferenceChanged += (_, e) =>
             {
-                bool followsSystem = CurrentThemeId == ThemeCatalog.SystemId || CurrentAccent == WindowsAccent;
+                bool followsSystem = CurrentThemeId is ThemeCatalog.SystemId or ThemeCatalog.HangarId
+                                     || EffectiveAccent is WindowsAccent or ThemeAccent;
                 if (followsSystem && e.Category is UserPreferenceCategory.General or UserPreferenceCategory.Color or UserPreferenceCategory.VisualStyle)
                     app.Dispatcher.InvokeAsync(() => Apply(CurrentThemeId, CurrentAccent));
             };
@@ -72,11 +88,18 @@ public static class ThemeManager
         ThemeChanged?.Invoke();
     }
 
-    public static ThemeInfo Resolve(string id) =>
-        id == ThemeCatalog.SystemId ? ThemeCatalog.Find(SystemPrefersDark() ? "dark" : "light") : ThemeCatalog.Find(id);
+    public static ThemeInfo Resolve(string id)
+    {
+        if (id == ThemeCatalog.SystemId) return ThemeCatalog.Find(SystemPrefersDark() ? "dark" : "light");
+        if (id == ThemeCatalog.HangarId) return ThemeCatalog.ReadHangar()?.Theme ?? ThemeCatalog.Find("dark");
+        if (id.StartsWith("custom:", StringComparison.Ordinal))
+            return ThemeCatalog.LoadCustom().FirstOrDefault(t => t.Id == id) ?? ThemeCatalog.Find("dark");
+        return ThemeCatalog.Find(id);
+    }
 
     public static Color AccentColor(string accent)
     {
+        if (accent == ThemeAccent) accent = Current.Accent ?? WindowsAccent;
         if (accent == WindowsAccent) return WindowsAccentColor() ?? Color.FromRgb(0x00, 0x78, 0xD4);
         try { return (Color)ColorConverter.ConvertFromString(accent); }
         catch { return Color.FromRgb(0x63, 0x66, 0xF1); }
@@ -84,7 +107,7 @@ public static class ThemeManager
 
     private static void ApplyAccent(string accent)
     {
-        var c = AccentColor(accent);
+        var c = Readable(AccentColor(accent));
         var r = Application.Current.Resources;
         r["AccentColor"] = c;
         r["AccentBrush"] = Freeze(new SolidColorBrush(c));
@@ -130,6 +153,56 @@ public static class ThemeManager
     }
 
     private static SolidColorBrush Freeze(SolidColorBrush b) { b.Freeze(); return b; }
+
+    /// <summary>Keeps an accent visible against the theme (as Hangar does).</summary>
+    private static Color Readable(Color c)
+    {
+        double l = Luminance(c);
+        if (IsDark && l < 0.30) return Shift(c, 0.35);
+        if (!IsDark && l > 0.75) return Shift(c, -0.35);
+        return c;
+    }
+
+    // ------------------------------------------------------------------ live-follow Hangar
+    private static FileSystemWatcher? _hangarWatcher;
+    private static System.Windows.Threading.DispatcherTimer? _hangarDebounce;
+
+    private static void WatchHangar(bool on)
+    {
+        if (!on)
+        {
+            _hangarWatcher?.Dispose();
+            _hangarWatcher = null;
+            return;
+        }
+        if (_hangarWatcher is not null || !Directory.Exists(ThemeCatalog.HangarFolder)) return;
+        var app = Application.Current;
+        _hangarDebounce ??= new System.Windows.Threading.DispatcherTimer(TimeSpan.FromMilliseconds(300),
+            System.Windows.Threading.DispatcherPriority.Normal, (_, _) =>
+            {
+                _hangarDebounce!.Stop();
+                if (CurrentThemeId == ThemeCatalog.HangarId) Apply(CurrentThemeId, CurrentAccent);
+            }, app.Dispatcher);
+        _hangarDebounce.Stop();
+        try
+        {
+            _hangarWatcher = new FileSystemWatcher(ThemeCatalog.HangarFolder)
+            {
+                IncludeSubdirectories = true,
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size,
+                EnableRaisingEvents = true,
+            };
+            FileSystemEventHandler changed = (_, e) =>
+            {
+                if (e.Name is null || !(e.Name.EndsWith("settings.json", StringComparison.OrdinalIgnoreCase) || e.Name.StartsWith("themes", StringComparison.OrdinalIgnoreCase))) return;
+                app.Dispatcher.InvokeAsync(() => { _hangarDebounce!.Stop(); _hangarDebounce.Start(); });
+            };
+            _hangarWatcher.Changed += changed;
+            _hangarWatcher.Created += changed;
+            _hangarWatcher.Renamed += (s, e) => changed(s, e);
+        }
+        catch { _hangarWatcher = null; }
+    }
 
     private static double Luminance(Color c) => (0.2126 * c.R + 0.7152 * c.G + 0.0722 * c.B) / 255.0;
 

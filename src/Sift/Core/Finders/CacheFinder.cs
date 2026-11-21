@@ -66,6 +66,11 @@ public sealed class CacheFinder : ICleanupFinder
         yield return new("AMD DXC cache", Path.Combine(local, @"AMD\DxcCache"), Risk.Safe, "Shader cache, rebuilt by games");
         yield return new("AMD Vulkan cache", Path.Combine(local, @"AMD\VkCache"), Risk.Safe, "Shader cache, rebuilt by games");
         yield return new("Intel shader cache", Path.Combine(local, @"Intel\ShaderCache"), Risk.Safe, "Shader cache, rebuilt by games");
+        var sysDrive = Path.GetPathRoot(windows) ?? "C:\\";
+        yield return new("NVIDIA driver installers", Path.Combine(sysDrive, "NVIDIA"), Risk.Safe, "Unpacked driver setup files, left after every driver update");
+        yield return new("NVIDIA app downloads", Path.Combine(programData, @"NVIDIA Corporation\Downloader"), Risk.Safe, "Downloaded driver packages");
+        yield return new("AMD driver installers", Path.Combine(sysDrive, "AMD"), Risk.Safe, "Unpacked driver setup files, left after every driver update");
+        yield return new("Epic Games launcher cache", Path.Combine(local, @"EpicGamesLauncher\Saved\webcache_4430"), Risk.Safe, "Store and library page cache");
 
         foreach (var (name, userData) in new[]
         {
@@ -100,6 +105,10 @@ public sealed class CacheFinder : ICleanupFinder
             yield return new("Steam web cache", Path.Combine(steam, @"appcache\httpcache"), Risk.Safe, "Store and library page cache");
             foreach (var lib in GameFinder.SteamLibraries())
                 yield return new($"Steam shader cache ({Path.GetPathRoot(lib)?.TrimEnd('\\')})", Path.Combine(lib, @"steamapps\shadercache"), Risk.Safe, "Pre-compiled shaders, re-downloaded as needed");
+            foreach (var lib in GameFinder.SteamLibraries())
+                yield return new($"Steam unfinished downloads ({Path.GetPathRoot(lib)?.TrimEnd('\\')})", Path.Combine(lib, @"steamapps\downloading"), Risk.Review, "Partly downloaded updates — Steam downloads them again if needed");
+            foreach (var lib in GameFinder.SteamLibraries())
+                yield return new($"Steam temp files ({Path.GetPathRoot(lib)?.TrimEnd('\\')})", Path.Combine(lib, @"steamapps\temp"), Risk.Safe, "Leftovers from installs and updates");
         }
 
         yield return new("npm cache", Path.Combine(local, "npm-cache"), Risk.Safe, "Downloaded Node.js packages");

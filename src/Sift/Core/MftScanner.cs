@@ -17,7 +17,7 @@ namespace Sift.Core;
 /// - Hard-linked files are counted once (the enumerator counts every link, e.g. inside WinSxS).
 /// - Folders Windows normally refuses to list (System Volume Information, other users' profiles) are included.
 /// </summary>
-public sealed class MftScanner : IScanner
+public sealed unsafe class MftScanner : IScanner
 {
     private const int RootRecord = 5;
     private const int FirstUserRecord = 24;   // 0–23 are NTFS metafiles ($MFT, $LogFile, $Extend, …) or reserved
@@ -114,6 +114,7 @@ public sealed class MftScanner : IScanner
         var volRoot = Path.GetPathRoot(full)!;                 // "C:\"
         var device = @"\\.\" + volRoot.TrimEnd('\\');          // "\\.\C:"
 
+        FlushVolume(device); // so files written moments ago are in the table we read
         using var h = OpenVolume(device);
         var vd = VolumeData(h);
         int recordSize = vd.BytesPerRecord;
@@ -123,10 +124,17 @@ public sealed class MftScanner : IScanner
         // ---- Record 0 is $MFT itself; its $DATA run list says where the rest of the table lives.
         int firstRead = Math.Max(cluster, recordSize);
         firstRead = (firstRead + vd.BytesPerSector - 1) / vd.BytesPerSector * vd.BytesPerSector;
-        var rec0 = new byte[firstRead];
-        ReadAt(h, vd.MftStartLcn * cluster, rec0, firstRead);
-        if (!ApplyFixups(rec0.AsSpan(0, recordSize))) throw new NotSupportedException("The file table header is damaged.");
-        var (runs, mftDataSize) = MftRuns(rec0.AsSpan(0, recordSize), cluster);
+        var rec0Ptr = (byte*)NativeMemory.AlignedAlloc((nuint)firstRead, 4096);
+        List<(long Lcn, long Clusters)> runs;
+        long mftDataSize;
+        try
+        {
+            ReadAt(h, vd.MftStartLcn * cluster, rec0Ptr, firstRead);
+            var rec0 = new Span<byte>(rec0Ptr, recordSize);
+            if (!ApplyFixups(rec0)) throw new NotSupportedException("The file table header is damaged.");
+            (runs, mftDataSize) = MftRuns(rec0, cluster);
+        }
+        finally { NativeMemory.AlignedFree(rec0Ptr); }
         long tableBytes = Math.Min(mftDataSize, vd.MftValidDataLength > 0 ? vd.MftValidDataLength : mftDataSize);
         long count64 = tableBytes / recordSize;
         if (count64 <= RootRecord || count64 > int.MaxValue) throw new NotSupportedException("Unexpected file table size.");
@@ -136,11 +144,19 @@ public sealed class MftScanner : IScanner
         var t = new Table(count);
 
         // ---- Read and parse, overlapping disk reads with parsing.
-        using (var queue = new BlockingCollection<(byte[] Buf, int Len, long FirstRecord)>(boundedCapacity: 3))
-        using (var free = new BlockingCollection<byte[]>(4))
+        // Unbuffered reads need sector-aligned memory.
+        var buffers = new IntPtr[4];
+        for (int i = 0; i < buffers.Length; i++) buffers[i] = (IntPtr)NativeMemory.AlignedAlloc(ChunkBytes, 4096);
+        try
         {
-            for (int i = 0; i < 4; i++) free.Add(new byte[ChunkBytes]);
+        using (var queue = new BlockingCollection<(IntPtr Buf, int Len, long FirstRecord)>(boundedCapacity: 3))
+        using (var free = new BlockingCollection<IntPtr>(4))
+        {
+            foreach (var b in buffers) free.Add(b);
             Exception? readError = null;
+            // The reader writes into native buffers: it must be stopped before they're freed, whatever happens.
+            using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var rt = stop.Token;
 
             var reader = new Thread(() =>
             {
@@ -153,13 +169,13 @@ public sealed class MftScanner : IScanner
                         long pos = 0;
                         while (pos < runBytes && record < count)
                         {
-                            ct.ThrowIfCancellationRequested();
+                            rt.ThrowIfCancellationRequested();
                             long want = Math.Min(Math.Min(ChunkBytes, runBytes - pos), (count - record) * (long)recordSize);
                             // Reads on a volume handle must be whole sectors.
                             int len = (int)((want + vd.BytesPerSector - 1) / vd.BytesPerSector * vd.BytesPerSector);
-                            var buf = free.Take(ct);
-                            ReadAt(h, lcn * cluster + pos, buf, len);
-                            queue.Add((buf, (int)Math.Min(want, len), record), ct);
+                            var buf = free.Take(rt);
+                            ReadAt(h, lcn * cluster + pos, (byte*)buf, len);
+                            queue.Add((buf, (int)Math.Min(want, len), record), rt);
                             record += want / recordSize;
                             pos += want;
                         }
@@ -171,27 +187,41 @@ public sealed class MftScanner : IScanner
             }) { IsBackground = true, Name = "Sift MFT read" };
             reader.Start();
 
+            try
+            {
             foreach (var (buf, len, first) in queue.GetConsumingEnumerable())
             {
                 int n = len / recordSize;
+                var chunk = new Span<byte>((void*)buf, len);
                 for (int i = 0; i < n; i++)
                 {
                     long recNo = first + i;
                     if (recNo >= count) break;
-                    try { ParseRecord(buf.AsSpan(i * recordSize, recordSize), (int)recNo, t); }
-                    catch (ArgumentOutOfRangeException) { Interlocked.Increment(ref _errors); } // malformed record
+                    try { ParseRecord(chunk.Slice(i * recordSize, recordSize), (int)recNo, t); }
+                    catch (Exception ex) when (ex is ArgumentOutOfRangeException or IndexOutOfRangeException or ArgumentException)
+                    { Interlocked.Increment(ref _errors); } // malformed record
                 }
                 Interlocked.Add(ref _readBytes, (long)n * recordSize);
                 free.Add(buf);
                 if (ct.IsCancellationRequested) break;
             }
-            reader.Join();
+            }
+            finally
+            {
+                stop.Cancel();
+                reader.Join();
+            }
             ct.ThrowIfCancellationRequested();
             if (readError is not null)
             {
                 if (readError is OperationCanceledException) throw readError;
                 throw new IOException("Couldn't read the drive's file table: " + readError.Message, readError);
             }
+        }
+        }
+        finally
+        {
+            foreach (var b in buffers) NativeMemory.AlignedFree((void*)b);
         }
 
         _current = "Building the folder tree…";
@@ -431,7 +461,8 @@ public sealed class MftScanner : IScanner
 
     private readonly record struct VolData(int BytesPerSector, int BytesPerCluster, int BytesPerRecord, long MftValidDataLength, long MftStartLcn);
 
-    private const uint GENERIC_READ = 0x80000000, FILE_SHARE_READ = 1, FILE_SHARE_WRITE = 2, OPEN_EXISTING = 3;
+    private const uint GENERIC_READ = 0x80000000, GENERIC_WRITE = 0x40000000, FILE_SHARE_READ = 1, FILE_SHARE_WRITE = 2, OPEN_EXISTING = 3;
+    private const uint FILE_FLAG_NO_BUFFERING = 0x20000000;
     private const uint FSCTL_GET_NTFS_VOLUME_DATA = 0x00090064;
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
@@ -444,11 +475,26 @@ public sealed class MftScanner : IScanner
     private static extern bool SetFilePointerEx(SafeFileHandle h, long distance, out long newPos, uint method);
 
     [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool ReadFile(SafeFileHandle h, byte[] buf, int toRead, out int read, IntPtr ov);
+    private static extern bool ReadFile(SafeFileHandle h, byte* buf, int toRead, out int read, IntPtr ov);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool FlushFileBuffers(SafeFileHandle h);
+
+    /// <summary>Best effort: asks Windows to write out pending changes on the volume (needs a write handle).</summary>
+    private static void FlushVolume(string device)
+    {
+        try
+        {
+            using var h = CreateFileW(device, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
+            if (!h.IsInvalid) FlushFileBuffers(h);
+        }
+        catch { /* not fatal: the table may just miss the last few seconds of changes */ }
+    }
 
     private static SafeFileHandle OpenVolume(string device)
     {
-        var h = CreateFileW(device, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
+        // No buffering: never serve a stale copy of the table from an earlier scan out of the volume cache.
+        var h = CreateFileW(device, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, FILE_FLAG_NO_BUFFERING, IntPtr.Zero);
         if (h.IsInvalid)
         {
             int err = Marshal.GetLastWin32Error();
@@ -472,24 +518,16 @@ public sealed class MftScanner : IScanner
             MftStartLcn: BinaryPrimitives.ReadInt64LittleEndian(s.Slice(64)));
     }
 
-    private static void ReadAt(SafeFileHandle h, long offset, byte[] buf, int len)
+    private static void ReadAt(SafeFileHandle h, long offset, byte* buf, int len)
     {
         if (!SetFilePointerEx(h, offset, out _, 0))
             throw new IOException("Seek failed: " + new Win32Exception(Marshal.GetLastWin32Error()).Message);
         int done = 0;
         while (done < len)
         {
-            int want = len - done;
-            byte[] target = buf;
-            if (done > 0)
-            {
-                // ReadFile has no buffer offset in this signature; partial reads are rare, so copy through a temp.
-                target = new byte[want];
-            }
-            if (!ReadFile(h, target, want, out int read, IntPtr.Zero))
+            if (!ReadFile(h, buf + done, len - done, out int read, IntPtr.Zero))
                 throw new IOException("Read failed: " + new Win32Exception(Marshal.GetLastWin32Error()).Message);
             if (read == 0) throw new EndOfStreamException("Unexpected end of the drive.");
-            if (done > 0) Buffer.BlockCopy(target, 0, buf, done, read);
             done += read;
         }
     }

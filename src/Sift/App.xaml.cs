@@ -10,30 +10,124 @@ namespace Sift;
 public partial class App : Application
 {
     private SmokeTest? _smoke;
+    private SingleInstance? _instance;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        _smoke = SmokeTest.FromArgs(e.Args);
+        var args = e.Args;
+        _smoke = SmokeTest.FromArgs(args);
+        bool updateTest = Array.IndexOf(args, "--update-test") >= 0;
+        bool Has(string flag) => args.Any(a => string.Equals(a, flag, StringComparison.OrdinalIgnoreCase));
 
         DispatcherUnhandledException += OnUnhandled;
         AppDomain.CurrentDomain.UnhandledException += (_, a) => Log(a.ExceptionObject as Exception);
         TaskScheduler.UnobservedTaskException += (_, a) => { Log(a.Exception); a.SetObserved(); };
 
+        // ---- Hangar's conventions: --quit closes a running Sift gracefully, --uninstall also removes Sift's data.
+        if (Has("--quit") || Has("--uninstall"))
+        {
+            int code = QuitRunning();
+            if (Has("--uninstall"))
+            {
+                ExplorerMenu.Remove();
+                try { if (Directory.Exists(AppSettings.Folder)) Directory.Delete(AppSettings.Folder, recursive: true); } catch { /* in use */ }
+                code = 0;
+            }
+            Shutdown(code);
+            return;
+        }
+
+        // ---- A folder from the command line or Explorer's "Analyze with Sift".
+        string? path = null;
+        if (_smoke is null && !updateTest)
+        {
+            path = args.Where(a => !a.StartsWith("--", StringComparison.Ordinal)).Select(a => a.Trim().Trim('"'))
+                       .FirstOrDefault(a => a.Length > 0 && Directory.Exists(a));
+            if (path is { Length: 2 } && path[1] == ':') path += "\\"; // "D:" from a drive's menu
+
+            // One Sift at a time: hand the request to the running copy. After an update the old copy is still
+            // closing, so wait for it instead.
+            _instance = SingleInstance.TryClaim(Has("--updated") ? TimeSpan.FromSeconds(15) : TimeSpan.Zero);
+            if (_instance is null)
+            {
+                var reply = SingleInstance.Send(path is null ? new SingleInstance.Request("show") : new SingleInstance.Request("scan", path));
+                if (reply is not null) { Shutdown(0); return; }
+                // The running copy didn't answer (stuck?): carry on as a second window rather than doing nothing.
+            }
+        }
+
         Updater.CleanupAfterUpdate();
 
-        var settings = _smoke is null ? AppSettings.Load() : new AppSettings { AutoCheckUpdates = false };
+        var settings = _smoke is null ? AppSettings.Load() : new AppSettings { AutoCheckUpdates = false, ThemeSchema = 2 };
         ThemeManager.Apply(settings.Theme, settings.Accent);
+        if (_smoke is null && settings.ExplorerMenu) { try { ExplorerMenu.Install(); } catch { /* ignore */ } } // keeps the path current
 
         var vm = new MainViewModel(settings);
         var window = new MainWindow(vm);
         MainWindow = window;
         window.Show();
 
-        int ut = Array.IndexOf(e.Args, "--update-test");
-        if (ut >= 0 && ut + 1 < e.Args.Length) RunUpdateTest(vm, e.Args[ut + 1]);
+        _instance?.Serve(req => Task.FromResult(Dispatcher.Invoke(() => Handle(vm, window, req))));
+
+        int ut = Array.IndexOf(args, "--update-test");
+        if (ut >= 0 && ut + 1 < args.Length) RunUpdateTest(vm, args[ut + 1]);
         else if (_smoke is not null) _smoke.Run(vm, window);
-        else vm.OnStartup();
+        else vm.OnStartup(path);
+    }
+
+    /// <summary>A request from a later launch of Sift.</summary>
+    private SingleInstance.Reply Handle(MainViewModel vm, Window window, SingleInstance.Request req)
+    {
+        switch (req.Cmd)
+        {
+            case "quit":
+                if (vm.Review.IsWorking) return new SingleInstance.Reply(false, "busy");
+                Dispatcher.InvokeAsync(() => { window.Close(); Shutdown(0); });
+                return new SingleInstance.Reply(true);
+
+            case "scan" when req.Path is not null:
+                BringToFront(window);
+                if (vm.Overview.IsScanning) return new SingleInstance.Reply(false, "busy");
+                vm.CurrentPage = Page.Overview;
+                _ = vm.Overview.ScanAsync(req.Path);
+                return new SingleInstance.Reply(true);
+
+            default:
+                BringToFront(window);
+                return new SingleInstance.Reply(true);
+        }
+    }
+
+    private static void BringToFront(Window w)
+    {
+        if (w.WindowState == WindowState.Minimized) w.WindowState = WindowState.Normal;
+        w.Show();
+        w.Activate();
+        w.Topmost = true;  // nudge past focus-stealing prevention, then let go
+        w.Topmost = false;
+        w.Focus();
+    }
+
+    /// <summary>Asks a running Sift to close; waits for it. 0 = closed or not running, 1 = it refused (busy).</summary>
+    private static int QuitRunning()
+    {
+        var reply = SingleInstance.Send(new SingleInstance.Request("quit"));
+        if (reply is null) return 0;
+        if (!reply.Ok) return 1;
+        try
+        {
+            using var p = Process.GetProcessById(reply.Pid);
+            p.WaitForExit(15000);
+        }
+        catch { /* already gone */ }
+        return 0;
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        _instance?.Dispose();
+        base.OnExit(e);
     }
 
     /// <summary>CI: an old build checks for, downloads, verifies and installs the latest release.</summary>
@@ -68,7 +162,10 @@ public partial class App : Application
         try
         {
             Directory.CreateDirectory(AppSettings.Folder);
-            File.AppendAllText(Path.Combine(AppSettings.Folder, "crash.log"),
+            var log = Path.Combine(AppSettings.Folder, "crash.log");
+            // Keep the log small: start over once it passes 1 MB.
+            if (File.Exists(log) && new FileInfo(log).Length > 1 << 20) File.Delete(log);
+            File.AppendAllText(log,
                 $"[{DateTime.Now:u}] Sift {Updater.CurrentVersionText}\n{ex}\n\n");
         }
         catch { /* ignore */ }
@@ -143,6 +240,98 @@ internal sealed class SmokeTest
         catch (Exception ex) { Write("     snap failed: " + ex.Message); }
     }
 
+    /// <summary>Scan history, comparisons, the new finders and searching, on a small folder of known files.</summary>
+    private async Task FixtureTests(MainViewModel vm)
+    {
+        var ov = vm.Overview;
+        var fx = Path.Combine(Path.GetPathRoot(Environment.SystemDirectory)!, "SiftSmoke");
+        if (Directory.Exists(fx)) Directory.Delete(fx, true);
+        Directory.CreateDirectory(Path.Combine(fx, "a"));
+        Directory.CreateDirectory(Path.Combine(fx, "b"));
+        Directory.CreateDirectory(Path.Combine(fx, "c"));
+        var rnd = new Random(42);
+        byte[] Bytes(int n) { var b = new byte[n]; rnd.NextBytes(b); return b; }
+        var one = Bytes(1_500_000);
+        File.WriteAllBytes(Path.Combine(fx, "a", "one.bin"), one);
+        File.WriteAllBytes(Path.Combine(fx, "a", "two.bin"), one); // duplicate of one.bin
+        File.WriteAllBytes(Path.Combine(fx, "b", "big.bin"), Bytes(3_000_000));
+        var old = Path.Combine(fx, "c", "old-video.mkv");
+        File.WriteAllBytes(old, Bytes(2_000_000));
+        File.SetLastWriteTimeUtc(old, DateTime.UtcNow.AddYears(-2));
+        File.WriteAllText(Path.Combine(fx, "c", "notes.txt"), "hello");
+
+        await ov.ScanAsync(fx);
+        Check(ov.Root?.FileCount == 5, $"fixture scan ({ov.ScanSummary})");
+
+        var ctx = new Core.Finders.FinderContext { Settings = vm.Settings, Scan = ov.Root };
+        var dups = await new Core.Finders.DuplicateFinder().FindAsync(ctx, CancellationToken.None);
+        Check(dups.Count == 2 && dups.Count(d => d.Suggested) == 1, $"duplicates found ({dups.Count})");
+        dups = await new Core.Finders.DuplicateFinder().FindAsync(ctx, CancellationToken.None);
+        Check(dups.Count == 2 && File.Exists(Path.Combine(AppSettings.Folder, "hashes.bin")), "duplicates again (hash cache)");
+
+        vm.Settings.LargeOldMinBytes = 1 << 20;
+        var large = await new Core.Finders.LargeOldFilesFinder().FindAsync(ctx, CancellationToken.None);
+        Check(large.Count == 1 && large[0].Title == "old-video.mkv", $"large old files ({string.Join(", ", large.Select(l => l.Title))})");
+        var extras = await new Core.Finders.WindowsExtrasFinder().FindAsync(ctx, CancellationToken.None);
+        Write($"     windows extras: {string.Join(", ", extras.Select(x => $"{x.Title} {x.SizeText}"))}");
+
+        // Change things, rescan, and compare.
+        File.WriteAllBytes(Path.Combine(fx, "a", "new.bin"), Bytes(2_000_000));
+        File.Delete(Path.Combine(fx, "b", "big.bin"));
+        await ov.ScanAsync(fx);
+        for (int i = 0; i < 50 && !ov.HasCompare; i++) await Task.Delay(100);
+        Check(ov.HasCompare, "previous scan loaded for comparison");
+        ov.Mode = ListMode.Changes;
+        await Settle();
+        foreach (var r in ov.Rows) Write($"     change: {r.Name} {r.DeltaText} ({r.Location})");
+        Check(ov.Rows.Any(r => r.Delta >= 1_900_000 && (r.Name == "new.bin" || r.Name == "a")) &&
+              ov.Rows.Any(r => r.Kind == ChangeKind.Removed && r.Name == "big.bin"), "changes since the previous scan");
+        await Snap("changes");
+        ov.Mode = ListMode.Contents;
+
+        // File types, wildcard search through subfolders.
+        ov.Mode = ListMode.Types;
+        await Settle();
+        Check(ov.Rows.Any(r => r.TypeKey == ".bin") && ov.Rows.All(r => r.IsTypeRow), "file types view");
+        ov.ShowType(".bin");
+        await Settle();
+        Check(ov.Mode == ListMode.LargestFiles && ov.Rows.Count == 3 && ov.Rows.All(r => r.Name.EndsWith(".bin")), "type → largest files of that type");
+        ov.FilterText = ""; ov.Mode = ListMode.Contents;
+        ov.SearchSubfolders = true;
+        ov.FilterText = "*.mkv";
+        await Task.Delay(400); await Settle();
+        Check(ov.Rows.Count == 1 && ov.Rows[0].Name == "old-video.mkv" && ov.Rows[0].HasLocation, "wildcard search through subfolders");
+        ov.FilterText = "";
+        await Task.Delay(400);
+
+        ov.ColorMode = Controls.TreemapColorMode.Age;
+        for (int i = 0; i < 20 && ov.LegendTitle != "Last modified"; i++) await Task.Delay(50);
+        await Task.Delay(300); await Settle();
+        Check(ov.Categories.Any(c => c.Name == "1–3 years"), $"colour by age legend ({string.Join(", ", ov.Categories.Select(c => c.Name))})");
+        await Snap("overview-age");
+        ov.ColorMode = Controls.TreemapColorMode.Type;
+
+        // Reopening shows the saved scan straight away.
+        await Task.Delay(1500);
+        ov.NewScanCommand.Execute(null);
+        await ov.RestoreLastAsync();
+        Check(ov.IsFromCache && ov.Root?.FileCount == 5 && ov.HasCompare, $"saved scan reopened ({ov.ScanSummary})");
+        await Snap("overview-saved");
+
+        // Undo a cleanup: recycle a file, then put it back.
+        var victim = Path.Combine(fx, "c", "notes.txt");
+        vm.Review.Add(new ReviewItem { Path = victim, Title = "notes.txt", Size = 5, Source = "Smoke" });
+        vm.Review.ConfirmCommand.Execute(null);
+        for (int i = 0; i < 100 && (vm.Review.IsWorking || !vm.Review.CanUndo); i++) await Task.Delay(100);
+        Check(!File.Exists(victim) && vm.Review.CanUndo, "recycled (undo available)");
+        await vm.Review.UndoAsync();
+        Write($"     undo: {vm.Review.ResultText}");
+        Check(File.Exists(victim), "undo restored the file from the Recycle Bin");
+        vm.Review.ClearCommand.Execute(null);
+
+        try { Directory.Delete(fx, true); } catch { /* ignore */ }
+    }
+
     private void Check(bool ok, string what)
     {
         Write((ok ? "ok   " : "FAIL ") + what);
@@ -177,8 +366,56 @@ internal sealed class SmokeTest
             foreach (var a in vm.SettingsPage.Accents) { a.IsSelected = true; await Settle(); }
             Check(true, "all accents incl. Windows accent");
             vm.SettingsPage.SelectTheme("dark");
-            vm.SettingsPage.Accents[1].IsSelected = true;
+            vm.SettingsPage.Accents[0].IsSelected = true; // theme's own
             await Settle();
+            await Snap("settings-themes");
+
+            // ---- Custom theme file in Hangar's format.
+            Directory.CreateDirectory(ThemeCatalog.SiftThemesFolder);
+            var themeFile = Path.Combine(ThemeCatalog.SiftThemesFolder, "smoke.json");
+            File.WriteAllText(themeFile, """
+                { // comments are allowed, like Hangar
+                  "schema": 1, "name": "Smoke Test", "mode": "dark",
+                  "colors": { "background": "#102030", "surface": "#203040", "text": "#F0F0F0", "accent": "#FF00AA" }
+                }
+                """);
+            vm.SettingsPage.ReloadThemesCommand.Execute(null);
+            Check(vm.SettingsPage.Themes.Any(t => t.Id == "custom:smoke test"), "custom theme file loaded");
+            vm.SettingsPage.SelectTheme("custom:smoke test");
+            await Settle();
+            Check(((System.Windows.Media.SolidColorBrush)Application.Current.Resources.MergedDictionaries[0]["WindowBg"]).Color.ToString() == "#FF102030", "custom theme applied");
+            Check(((System.Windows.Media.SolidColorBrush)Application.Current.Resources["AccentBrush"]).Color.ToString() == "#FFFF00AA", "custom theme's own accent");
+            File.Delete(themeFile);
+
+            // ---- Following Hangar live (a stand-in Hangar settings file; CI has no Hangar).
+            bool hadHangar = Directory.Exists(ThemeCatalog.HangarFolder);
+            if (!hadHangar)
+            {
+                Directory.CreateDirectory(ThemeCatalog.HangarFolder);
+                var hs = Path.Combine(ThemeCatalog.HangarFolder, "settings.json");
+                File.WriteAllText(hs, "{ \"theme\": \"ocean\", \"accent\": \"#FF5D5D\" }");
+                vm.SettingsPage.ReloadThemesCommand.Execute(null);
+                vm.SettingsPage.SelectTheme(ThemeCatalog.HangarId);
+                await Settle();
+                Check(ThemeManager.Current.Id == "ocean", $"follows Hangar's theme ({ThemeManager.Current.Id})");
+                File.WriteAllText(hs, "{ \"theme\": \"rose\", \"accent\": \"theme\" }");
+                for (int i = 0; i < 30 && ThemeManager.Current.Id != "rose"; i++) await Task.Delay(100);
+                Check(ThemeManager.Current.Id == "rose", "picks up Hangar theme changes live");
+                vm.CurrentPage = Page.Settings;
+                await Snap("settings-hangar-rose");
+                vm.SettingsPage.SelectTheme("dark");
+                await Settle();
+                Directory.Delete(ThemeCatalog.HangarFolder, true);
+                vm.SettingsPage.ReloadThemesCommand.Execute(null);
+            }
+
+            // ---- Explorer right-click menu.
+            vm.SettingsPage.ExplorerMenuEnabled = true;
+            Check(ExplorerMenu.IsInstalled(), "Explorer menu added");
+            vm.SettingsPage.ExplorerMenuEnabled = false;
+            Check(!ExplorerMenu.IsInstalled(), "Explorer menu removed");
+
+            await FixtureTests(vm);
 
             vm.CurrentPage = Page.Overview;
             var sw = Stopwatch.StartNew();

@@ -34,11 +34,21 @@ public sealed class TreemapControl : FrameworkElement
         new FrameworkPropertyMetadata(0, (d, _) => ((TreemapControl)d).Relayout()));
 
     public static readonly DependencyProperty HighlightProperty = DependencyProperty.Register(
-        nameof(Highlight), typeof(FileCategory?), typeof(TreemapControl),
+        nameof(Highlight), typeof(int?), typeof(TreemapControl),
         new FrameworkPropertyMetadata(null, (d, _) => ((TreemapControl)d).Relayout()));
 
-    /// <summary>When set, files of other categories are drawn muted so this type stands out.</summary>
-    public FileCategory? Highlight { get => (FileCategory?)GetValue(HighlightProperty); set => SetValue(HighlightProperty, value); }
+    /// <summary>When set, files whose legend key (category or age bucket) differs are drawn muted.</summary>
+    public int? Highlight { get => (int?)GetValue(HighlightProperty); set => SetValue(HighlightProperty, value); }
+
+    public static readonly DependencyProperty ColorModeProperty = DependencyProperty.Register(
+        nameof(ColorMode), typeof(TreemapColorMode), typeof(TreemapControl),
+        new FrameworkPropertyMetadata(TreemapColorMode.Type, (d, _) => ((TreemapControl)d).Relayout()));
+
+    public TreemapColorMode ColorMode { get => (TreemapColorMode)GetValue(ColorModeProperty); set => SetValue(ColorModeProperty, value); }
+
+    /// <summary>The legend key for a file under the current colour mode.</summary>
+    public static int KeyOf(FileNode file, TreemapColorMode mode, long nowTicks) =>
+        mode == TreemapColorMode.Age ? AgePalette.BucketOf(file.LastWriteTicks, nowTicks) : (int)file.Category;
 
     public FileNode? Root { get => (FileNode?)GetValue(RootProperty); set => SetValue(RootProperty, value); }
     public FileNode? Selected { get => (FileNode?)GetValue(SelectedProperty); set => SetValue(SelectedProperty, value); }
@@ -106,7 +116,8 @@ public sealed class TreemapControl : FrameworkElement
                     new Pen(Res("TreemapFolderLineBrush", Brushes.Black), 1),
                     Res("TreemapLabelBrush", Brushes.White),
                     VisualTreeHelper.GetDpi(this).PixelsPerDip,
-                    Res("TrackBrush", Brushes.Gray));
+                    Res("TrackBrush", Brushes.Gray),
+                    ColorMode, DateTime.UtcNow.Ticks);
                 ctx.FolderPen.Freeze();
                 DrawNode(ctx, root, bounds, 0);
             }
@@ -114,7 +125,8 @@ public sealed class TreemapControl : FrameworkElement
         DrawOverlay();
     }
 
-    private sealed record DrawCtx(DrawingContext Dc, Brush FolderBrush, Pen FolderPen, Brush LabelBrush, double Dpi, Brush MutedBrush);
+    private sealed record DrawCtx(DrawingContext Dc, Brush FolderBrush, Pen FolderPen, Brush LabelBrush, double Dpi, Brush MutedBrush,
+        TreemapColorMode Mode, long Now);
 
     private static readonly Pen CellPen = CreateCellPen();
     private static Pen CreateCellPen()
@@ -135,9 +147,13 @@ public sealed class TreemapControl : FrameworkElement
 
         if (!node.IsDirectory)
         {
+            int key = KeyOf(node, ctx.Mode, ctx.Now);
             var hl = Highlight;
-            bool muted = hl is not null && node.Category != hl.Value;
-            dc.DrawRectangle(muted ? ctx.MutedBrush : CategoryPalette.CushionBrush(node.Category), r.Width > 3 && r.Height > 3 ? CellPen : null, r);
+            bool muted = hl is not null && key != hl.Value;
+            var fill = muted ? ctx.MutedBrush
+                : ctx.Mode == TreemapColorMode.Age ? AgePalette.CushionBrush(key)
+                : CategoryPalette.CushionBrush(node.Category);
+            dc.DrawRectangle(fill, r.Width > 3 && r.Height > 3 ? CellPen : null, r);
             if (!muted && r.Width > 70 && r.Height > 34)
             {
                 DrawText(dc, node.Name, r.X + 6, r.Y + 5, r.Width - 12, 11.5, FileLabel, _typefaceBold, ctx.Dpi);

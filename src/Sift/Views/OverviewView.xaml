@@ -38,6 +38,17 @@
                     <TextBlock Text="{Binding Error}" Foreground="{DynamicResource DangerBrush}" TextWrapping="Wrap"/>
                 </Border>
 
+                <Border Margin="0,16,0,0" Padding="12,9" CornerRadius="8" Background="{DynamicResource AccentSoftBrush}"
+                        HorizontalAlignment="Left" Visibility="{Binding ShowFastScanTip, Converter={StaticResource BoolVis}}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Style="{StaticResource Glyph}" Text="&#xE945;" FontSize="13" Foreground="{DynamicResource AccentForegroundBrush}"/>
+                        <TextBlock Margin="10,0,0,0" TextWrapping="Wrap" MaxWidth="760">
+                            <Run Text="Fast scan:" FontWeight="SemiBold"/>
+                            <Run Text="run Sift as administrator (button at the top) and it reads the drive's file table directly — whole drives in seconds."/>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+
                 <ItemsControl ItemsSource="{Binding Drives}" Margin="0,26,0,0">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
@@ -86,9 +97,12 @@
                                             </Style>
                                         </ProgressBar.Style>
                                     </ProgressBar>
-                                    <TextBlock Margin="0,10,0,0" Style="{StaticResource Faint}">
-                                        <Run Text="Scan"/><Run Text=" "/><Run Text="{Binding Letter, Mode=OneWay}"/><Run Text="  →"/>
-                                    </TextBlock>
+                                    <DockPanel Margin="0,10,0,0">
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding LastScanText}" Style="{StaticResource Faint}"/>
+                                        <TextBlock Style="{StaticResource Faint}">
+                                            <Run Text="Scan"/><Run Text=" "/><Run Text="{Binding Letter, Mode=OneWay}"/><Run Text="  →"/>
+                                        </TextBlock>
+                                    </DockPanel>
                                 </StackPanel>
                             </Button>
                         </DataTemplate>
@@ -143,14 +157,24 @@
             </StackPanel>
         </ScrollViewer>
 
+        <!-- ============ Opening the saved scan ============ -->
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding IsRestoring, Converter={StaticResource BoolVis}}">
+            <Control Style="{StaticResource Spinner}" Width="26" Height="26"/>
+            <TextBlock Text="Opening your last scan…" Style="{StaticResource Dim}" Margin="0,12,0,0"/>
+        </StackPanel>
+
         <!-- ============ Scanning ============ -->
         <Grid Visibility="{Binding IsScanning, Converter={StaticResource BoolVis}}">
             <Border Style="{StaticResource Card}" Width="560" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="28,26">
                 <StackPanel>
                     <StackPanel Orientation="Horizontal">
                         <Control Style="{StaticResource Spinner}" Width="22" Height="22"/>
-                        <TextBlock Style="{StaticResource H2}" Margin="12,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="440"
+                        <TextBlock Style="{StaticResource H2}" Margin="12,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="360"
                                    Text="{Binding ScanTarget, StringFormat='Scanning {0}'}"/>
+                        <Border Style="{StaticResource Badge}" Margin="10,0,0,0" Visibility="{Binding IsFastScanning, Converter={StaticResource BoolVis}}"
+                                ToolTip="Reading the drive's file table directly">
+                            <TextBlock Text="Fast scan" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource AccentForegroundBrush}"/>
+                        </Border>
                     </StackPanel>
                     <ProgressBar Value="{Binding ProgressPercent, Mode=OneWay}" Maximum="100" Margin="0,22,0,0"/>
                     <Grid Margin="0,16,0,0">
@@ -206,12 +230,12 @@
                                            Foreground="{DynamicResource TextFaintBrush}"/>
                                 <Button Style="{StaticResource GhostButton}" Padding="6,4" MaxWidth="220"
                                         Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                        CommandParameter="{Binding}">
-                                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" FontWeight="SemiBold"/>
+                                        CommandParameter="{Binding Node}" ToolTip="{Binding Node.FullPath}">
+                                    <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" FontWeight="SemiBold"/>
                                 </Button>
                             </StackPanel>
                             <DataTemplate.Triggers>
-                                <DataTrigger Binding="{Binding IsRoot}" Value="True">
+                                <DataTrigger Binding="{Binding IsFirst}" Value="True">
                                     <Setter TargetName="Chevron" Property="Visibility" Value="Collapsed"/>
                                 </DataTrigger>
                             </DataTemplate.Triggers>
@@ -220,13 +244,23 @@
                 </ItemsControl>
             </DockPanel>
 
-            <TextBlock Grid.Row="1" Text="{Binding ScanSummary}" Style="{StaticResource Faint}" Margin="4,6,0,10"/>
+            <StackPanel Grid.Row="1" Margin="4,6,0,10">
+                <TextBlock Text="{Binding ScanSummary}" Style="{StaticResource Faint}"/>
+                <Border Margin="-4,8,0,0" Padding="12,7" CornerRadius="8" Background="{DynamicResource WarningSoftBrush}" HorizontalAlignment="Left"
+                        Visibility="{Binding IsFromCache, Converter={StaticResource BoolVis}}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Style="{StaticResource Glyph}" Text="&#xE81C;" FontSize="13" Foreground="{DynamicResource WarningBrush}"/>
+                        <TextBlock Text="{Binding CacheText}" Margin="10,0,0,0" VerticalAlignment="Center"/>
+                        <Button Style="{StaticResource LinkButton}" Content="Rescan now" Margin="12,0,0,0" Command="{Binding RescanCommand}" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
 
             <Grid Grid.Row="2">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" MinWidth="320"/>
                     <ColumnDefinition Width="14"/>
-                    <ColumnDefinition Width="420" MinWidth="300"/>
+                    <ColumnDefinition x:Name="ListColumn" Width="420" MinWidth="300"/>
                 </Grid.ColumnDefinitions>
 
                 <!-- Treemap + legend -->
@@ -236,6 +270,13 @@
                         <StackPanel Orientation="Horizontal" Margin="0,6,0,0" Visibility="{Binding HasHighlight, Converter={StaticResource BoolVis}}">
                             <TextBlock Text="{Binding HighlightText}" Foreground="{DynamicResource AccentForegroundBrush}" FontSize="12" VerticalAlignment="Center"/>
                             <Button Style="{StaticResource LinkButton}" Content="Clear" Margin="10,0,0,0" FontSize="12" Command="{Binding ClearHighlightCommand}"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <TextBlock Text="COLOUR BY" Style="{StaticResource Label}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <RadioButton Style="{StaticResource Chip}" GroupName="ColorMode" Content="File type" Padding="10,3"
+                                         IsChecked="{Binding ColorMode, Converter={StaticResource Equals}, ConverterParameter=Type}"/>
+                            <RadioButton Style="{StaticResource Chip}" GroupName="ColorMode" Content="Last modified" Padding="10,3"
+                                         IsChecked="{Binding ColorMode, Converter={StaticResource Equals}, ConverterParameter=Age}"/>
                         </StackPanel>
                         <ItemsControl ItemsSource="{Binding Categories}" Margin="0,6,0,0">
                             <ItemsControl.ItemsPanel>
@@ -272,11 +313,13 @@
                                                  Hovered="{Binding Hovered, Mode=OneWayToSource}"
                                                  LayoutVersion="{Binding LayoutVersion}"
                                                  Highlight="{Binding Highlight}"
+                                                 ColorMode="{Binding ColorMode}"
                                                  ContextMenu="{StaticResource NodeMenu}"/>
                     </Border>
                 </DockPanel>
 
-                <GridSplitter Grid.Column="1" Width="14" HorizontalAlignment="Stretch" ResizeBehavior="PreviousAndNext" Cursor="SizeWE"/>
+                <GridSplitter Grid.Column="1" Width="14" HorizontalAlignment="Stretch" ResizeBehavior="PreviousAndNext" Cursor="SizeWE"
+                              DragCompleted="Splitter_DragCompleted"/>
 
                 <!-- Folder contents -->
                 <Border Grid.Column="2" Style="{StaticResource Card}" Padding="12,14,12,6">
@@ -293,18 +336,32 @@
                                              IsChecked="{Binding Mode, Converter={StaticResource Equals}, ConverterParameter=Contents}"/>
                                 <RadioButton Style="{StaticResource Chip}" GroupName="ListMode" Content="Largest files"
                                              IsChecked="{Binding Mode, Converter={StaticResource Equals}, ConverterParameter=LargestFiles}"/>
+                                <RadioButton Style="{StaticResource Chip}" GroupName="ListMode" Content="Types"
+                                             ToolTip="Space used by each file extension"
+                                             IsChecked="{Binding Mode, Converter={StaticResource Equals}, ConverterParameter=Types}"/>
+                                <RadioButton Style="{StaticResource Chip}" GroupName="ListMode" Content="Changes"
+                                             ToolTip="{Binding CompareText}"
+                                             Visibility="{Binding HasCompare, Converter={StaticResource BoolVis}}"
+                                             IsChecked="{Binding Mode, Converter={StaticResource Equals}, ConverterParameter=Changes}"/>
                             </StackPanel>
+                            <TextBlock Margin="0,6,0,0" Style="{StaticResource Faint}" Visibility="{Binding IsChangesMode, Converter={StaticResource BoolVis}}">
+                                <Run Text="Compared with your scan from"/> <Run Text="{Binding CompareText, Mode=OneWay}"/>
+                            </TextBlock>
                             <Grid Margin="0,10,0,0">
                                 <TextBox x:Name="FilterBox" Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}" Padding="30,6,28,6"/>
                                 <TextBlock Style="{StaticResource Glyph}" Text="&#xE71C;" FontSize="12" Margin="11,0,0,0" HorizontalAlignment="Left"
                                            Foreground="{DynamicResource TextFaintBrush}" IsHitTestVisible="False"/>
-                                <TextBlock Text="Filter by name   (Ctrl+F)" Margin="31,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"
+                                <TextBlock Text="Filter by name or *.ext   (Ctrl+F)" Margin="31,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"
                                            Foreground="{DynamicResource TextFaintBrush}"
                                            Visibility="{Binding FilterText, Converter={StaticResource NotNullVis}}"/>
                                 <Button Style="{StaticResource IconButton}" Content="&#xE711;" Width="24" Height="24" FontSize="9" HorizontalAlignment="Right" Margin="0,0,4,0"
                                         ToolTip="Clear filter" Click="ClearFilter_Click"
                                         Visibility="{Binding FilterText, Converter={StaticResource NullVis}}"/>
                             </Grid>
+                            <CheckBox Margin="0,8,0,0" IsChecked="{Binding SearchSubfolders}" FontSize="12"
+                                      ToolTip="Search every folder below this one, not just this folder. Wildcards work too: *.mp4, IMG_20??*">
+                                <TextBlock Text="Search subfolders too" FontSize="12" Foreground="{DynamicResource TextDimBrush}"/>
+                            </CheckBox>
                         </StackPanel>
                         <Grid>
                             <TextBlock Text="{Binding RowsEmptyText}" Style="{StaticResource Dim}" HorizontalAlignment="Center" Margin="0,30,0,0"
@@ -337,7 +394,16 @@
                                             </GridViewColumn.Header>
                                             <GridViewColumn.CellTemplate>
                                                 <DataTemplate>
-                                                    <TextBlock Text="{Binding SizeText}" FontWeight="SemiBold"/>
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding SizeText}" FontWeight="SemiBold"/>
+                                                        <TextBlock x:Name="DeltaText" Text="{Binding DeltaText}" FontSize="11" Foreground="{DynamicResource WarningBrush}"
+                                                                   Visibility="{Binding HasDelta, Converter={StaticResource BoolVis}}"/>
+                                                    </StackPanel>
+                                                    <DataTemplate.Triggers>
+                                                        <DataTrigger Binding="{Binding DeltaSign}" Value="-1">
+                                                            <Setter TargetName="DeltaText" Property="Foreground" Value="{DynamicResource SuccessBrush}"/>
+                                                        </DataTrigger>
+                                                    </DataTemplate.Triggers>
                                                 </DataTemplate>
                                             </GridViewColumn.CellTemplate>
                                         </GridViewColumn>

@@ -18,6 +18,10 @@ public sealed class ReviewItem : ObservableObject
     public ItemAction Action { get; init; } = ItemAction.Delete;
     public string? UninstallUri { get; init; }
     public string? UninstallLabel { get; init; }
+    public string? Command { get; init; }
+    public string? CommandArgs { get; init; }
+    public bool CommandElevated { get; init; }
+    public string? CommandFrees { get; init; }
     public Risk Risk { get; init; } = Risk.Review;
     public CleanupItem? Origin { get; init; }
 
@@ -27,6 +31,7 @@ public sealed class ReviewItem : ObservableObject
     {
         ItemAction.DeleteContents => "Empty folder",
         ItemAction.Uninstall => UninstallLabel ?? "Uninstall",
+        ItemAction.RunCommand => UninstallLabel ?? "Run Windows command",
         _ => "Delete",
     };
 
@@ -74,11 +79,52 @@ public sealed class ReviewViewModel : ObservableObject
         OpenCommand = new RelayCommand(p => { if (p is ReviewItem i) FsUtil.OpenInExplorer(i.Path); });
         CheckAllCommand = new RelayCommand(() => { foreach (var i in Items) i.IsChecked = true; });
         OpenRecycleBinCommand = new RelayCommand(() => FsUtil.OpenUri("shell:RecycleBinFolder"));
+        UndoCommand = new RelayCommand(() => _ = UndoAsync(), () => CanUndo);
         EmptyRecycleBinCommand = new RelayCommand(EmptyRecycleBin, () => !IsWorking && RecycleBinItems > 0);
         RefreshRecycleBin();
     }
 
     public ICommand OpenRecycleBinCommand { get; }
+    public ICommand UndoCommand { get; }
+
+    private (DateTime From, DateTime To, List<ReviewItem> Items)? _lastRun;
+    public bool CanUndo => _lastRun is not null && !IsWorking;
+
+    /// <summary>Raised after an undo, with how many items came back.</summary>
+    public event Action<int>? ItemsRestored;
+
+    /// <summary>Puts everything the last cleanup sent to the Recycle Bin back where it was.</summary>
+    public async Task UndoAsync()
+    {
+        if (_lastRun is not { } run) return;
+        IsWorking = true;
+        ProgressText = "Restoring from the Recycle Bin…";
+        try
+        {
+            var targets = run.Items.Select(i => new RecycleBin.Target(i.Path, i.Action == ItemAction.DeleteContents)).ToList();
+            int restored = await FileDeleter.RunSta(() => RecycleBin.Restore(targets, run.From, run.To));
+            foreach (var i in run.Items)
+            {
+                bool back = i.Action == ItemAction.DeleteContents || File.Exists(i.Path) || Directory.Exists(i.Path);
+                if (!back) continue;
+                i.Status = ReviewStatus.Pending;
+                i.Message = null;
+                i.IsChecked = false;
+            }
+            ResultText = restored > 0 ? $"Restored {restored} item{(restored == 1 ? "" : "s")} to where they were" : "Nothing to restore — the Recycle Bin may have been emptied";
+            _lastRun = null;
+            Raise(nameof(CanUndo));
+            RefreshRecycleBin();
+            if (restored > 0) ItemsRestored?.Invoke(restored);
+        }
+        catch (Exception ex) { ResultText = "Couldn't restore: " + ex.Message; }
+        finally
+        {
+            IsWorking = false;
+            ProgressText = null;
+            RaiseTotals();
+        }
+    }
     public ICommand EmptyRecycleBinCommand { get; }
 
     private long _recycleBinSize, _recycleBinItems;
@@ -105,6 +151,8 @@ public sealed class ReviewViewModel : ObservableObject
         // Windows shows its own "Are you sure?" prompt.
         if (Native.EmptyRecycleBin(owner))
         {
+            _lastRun = null;
+            Raise(nameof(CanUndo));
             RefreshRecycleBin();
             ResultText = $"Emptied the Recycle Bin · {Format.Bytes(Math.Max(0, before - RecycleBinSize))} freed";
         }
@@ -130,7 +178,7 @@ public sealed class ReviewViewModel : ObservableObject
     public bool IsConfirming { get => _isConfirming; set => Set(ref _isConfirming, value); }
 
     private bool _isWorking;
-    public bool IsWorking { get => _isWorking; set { if (Set(ref _isWorking, value)) RelayCommand.Refresh(); } }
+    public bool IsWorking { get => _isWorking; set { if (Set(ref _isWorking, value)) { Raise(nameof(CanUndo)); RelayCommand.Refresh(); } } }
 
     private string? _progressText;
     public string? ProgressText { get => _progressText; set => Set(ref _progressText, value); }
@@ -154,15 +202,23 @@ public sealed class ReviewViewModel : ObservableObject
         get
         {
             var checkedItems = Items.Where(i => i.IsChecked && !i.IsFinished).ToList();
-            int uninstall = checkedItems.Count(i => i.Action == ItemAction.Uninstall);
-            int files = checkedItems.Count - uninstall;
+            var handoffs = checkedItems.Where(i => i.Action == ItemAction.Uninstall).ToList();
+            var commands = checkedItems.Where(i => i.Action == ItemAction.RunCommand).ToList();
+            var files = checkedItems.Where(i => i.Action is ItemAction.Delete or ItemAction.DeleteContents).ToList();
             var parts = new List<string>();
-            if (files > 0)
-                parts.Add(Permanent
-                    ? $"Permanently delete {files} item{(files == 1 ? "" : "s")} ({Format.Bytes(checkedItems.Where(i => i.Action != ItemAction.Uninstall).Sum(i => i.Size))})? This can't be undone."
-                    : $"Move {files} item{(files == 1 ? "" : "s")} ({Format.Bytes(checkedItems.Where(i => i.Action != ItemAction.Uninstall).Sum(i => i.Size))}) to the Recycle Bin?");
-            if (uninstall > 0)
-                parts.Add($"{uninstall} game{(uninstall == 1 ? "" : "s")} will open in {(uninstall == 1 ? "its launcher" : "their launchers")} to uninstall.");
+            if (files.Count > 0)
+            {
+                string what = $"{files.Count} item{(files.Count == 1 ? "" : "s")} ({Format.Bytes(files.Sum(i => i.Size))})";
+                parts.Add(Permanent ? $"Permanently delete {what}? This can't be undone." : $"Move {what} to the Recycle Bin? You can undo this afterwards.");
+            }
+            foreach (var c in commands)
+                parts.Add($"{c.ActionText} will free {Format.Bytes(c.Size)}{(c.CommandElevated && !Native.IsElevated() ? " (Windows asks for administrator permission)" : "")}.");
+            int games = handoffs.Count(h => h.UninstallUri?.Contains("uninstall", StringComparison.OrdinalIgnoreCase) == true || h.Source is "Steam" or "Epic" or "GOG");
+            if (games > 0)
+                parts.Add($"{games} game{(games == 1 ? "" : "s")} will open in {(games == 1 ? "its launcher" : "their launchers")} to uninstall.");
+            int pages = handoffs.Count - games;
+            if (pages > 0)
+                parts.Add($"{pages} item{(pages == 1 ? "" : "s")} will open Windows Settings, where Windows removes {(pages == 1 ? "it" : "them")} itself.");
             return string.Join(" ", parts);
         }
     }
@@ -217,6 +273,9 @@ public sealed class ReviewViewModel : ObservableObject
         long freed = 0;
         int ok = 0, failed = 0, handed = 0;
         var deleted = new List<ReviewItem>();
+        var recycled = new List<ReviewItem>();
+        long commandFreed = 0;
+        var started = DateTime.UtcNow;
 
         try
         {
@@ -237,6 +296,28 @@ public sealed class ReviewViewModel : ObservableObject
                     continue;
                 }
 
+                if (item.Action == ItemAction.RunCommand && item.Command is not null)
+                {
+                    var (cmdOk, msg) = await RecycleBin.RunCommandAsync(item.Command, item.CommandArgs, item.CommandElevated);
+                    bool gone = item.CommandFrees is null || !File.Exists(item.CommandFrees);
+                    if (cmdOk && gone)
+                    {
+                        freed += item.Size;
+                        commandFreed += item.Size;
+                        ok++;
+                        item.Message = $"Done · {Format.Bytes(item.Size)} freed";
+                        item.Status = ReviewStatus.Done;
+                        deleted.Add(item);
+                    }
+                    else
+                    {
+                        failed++;
+                        item.Message = cmdOk ? "Windows didn't remove the file" : msg;
+                        item.Status = ReviewStatus.Failed;
+                    }
+                    continue;
+                }
+
                 bool contents = item.Action == ItemAction.DeleteContents;
                 bool permanent = _settings.PermanentDelete || (contents && _settings.PermanentDeleteCaches);
                 var outcome = await FileDeleter.RunSta(() => FileDeleter.Delete(item.Path, item.Size, contents, permanent));
@@ -250,6 +331,7 @@ public sealed class ReviewViewModel : ObservableObject
                         : $"{Format.Bytes(outcome.Freed)} cleared · {outcome.Error}";
                     item.Status = ReviewStatus.Done;
                     deleted.Add(item);
+                    if (!permanent) recycled.Add(item);
                 }
                 else
                 {
@@ -266,7 +348,10 @@ public sealed class ReviewViewModel : ObservableObject
         }
 
         var parts = new List<string>();
-        if (ok > 0) parts.Add(_settings.PermanentDelete ? $"Freed {Format.Bytes(freed)}" : $"Moved {Format.Bytes(freed)} to the Recycle Bin");
+        long recycledBytes = freed - commandFreed;
+        if (ok > 0 && recycled.Count > 0) parts.Add($"Moved {Format.Bytes(recycled.Sum(r => r.Size))} to the Recycle Bin");
+        if (ok > 0 && recycledBytes - recycled.Sum(r => r.Size) > 0) parts.Add($"Freed {Format.Bytes(recycledBytes - recycled.Sum(r => r.Size))}");
+        if (commandFreed > 0) parts.Add($"Freed {Format.Bytes(commandFreed)} through Windows");
         if (handed > 0) parts.Add($"{handed} uninstaller{(handed == 1 ? "" : "s")} opened");
         if (failed > 0) parts.Add($"{failed} couldn't be removed");
         var drives = work.Select(w => Path.GetPathRoot(w.Path)).Where(r => !string.IsNullOrEmpty(r)).Distinct(StringComparer.OrdinalIgnoreCase);
@@ -280,6 +365,8 @@ public sealed class ReviewViewModel : ObservableObject
             catch { /* ignore */ }
         }
         ResultText = string.Join(" · ", parts);
+        _lastRun = recycled.Count > 0 ? (started, DateTime.UtcNow, recycled) : null;
+        Raise(nameof(CanUndo));
         RefreshRecycleBin();
         if (deleted.Count > 0) ItemsDeleted?.Invoke(deleted);
         RaiseTotals();

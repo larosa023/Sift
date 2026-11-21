@@ -26,6 +26,7 @@ public sealed class DuplicateFinder : ICleanupFinder
         long min = Math.Max(1, ctx.Settings.DuplicateMinBytes);
 
         ctx.Status?.Report("Grouping files by size…");
+        var cache = HashCache.Load();
         var bySize = new Dictionary<long, List<FileNode>>();
         foreach (var f in ctx.Scan.EnumerateFiles())
         {
@@ -53,7 +54,7 @@ public sealed class DuplicateFinder : ICleanupFinder
         var stage1 = new ConcurrentBag<List<FileNode>>();
         Parallel.ForEach(candidates, new ParallelOptions { CancellationToken = ct, MaxDegreeOfParallelism = 4 }, group =>
         {
-            foreach (var sub in group.GroupBy(f => SampleHash(PathOf(f), f.Size)).Where(g => g.Key != 0 && g.Count() > 1))
+            foreach (var sub in group.GroupBy(f => cache.Sample(PathOf(f), f.Size, f.LastWriteTicks, () => SampleHash(PathOf(f), f.Size))).Where(g => g.Key != 0 && g.Count() > 1))
                 stage1.Add(sub.ToList());
         });
 
@@ -69,13 +70,14 @@ public sealed class DuplicateFinder : ICleanupFinder
             }
             else
             {
-                foreach (var sub in group.GroupBy(f => FullHash(PathOf(f), ct)).Where(g => g.Key != UInt128.Zero && g.Count() > 1))
+                foreach (var sub in group.GroupBy(f => cache.Full(PathOf(f), f.Size, f.LastWriteTicks, () => FullHash(PathOf(f), ct))).Where(g => g.Key != UInt128.Zero && g.Count() > 1))
                     sets.Add((sub.Key, sub.ToList()));
             }
             var d = Interlocked.Increment(ref done);
             if (d % 25 == 0) ctx.Status?.Report($"Hashing… {d:N0} of {total:N0} sets");
         });
 
+        cache.Save();
         var items = new List<CleanupItem>();
         int setNo = 0;
         foreach (var (_, files) in sets.OrderByDescending(s => s.Files[0].Size * (s.Files.Count - 1)))

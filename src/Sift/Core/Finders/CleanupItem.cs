@@ -11,8 +11,10 @@ public enum ItemAction
     Delete,
     /// <summary>Delete a folder's contents but keep the folder (caches, temp).</summary>
     DeleteContents,
-    /// <summary>Hand off to an uninstaller (e.g. steam://uninstall/...) instead of deleting files.</summary>
+    /// <summary>Hand off to an uninstaller or a Windows page (e.g. steam://uninstall/...) instead of deleting files.</summary>
     Uninstall,
+    /// <summary>Run a Windows command (e.g. powercfg /hibernate off), elevated when needed.</summary>
+    RunCommand,
 }
 
 public sealed class CleanupItem : INotifyPropertyChanged
@@ -27,6 +29,11 @@ public sealed class CleanupItem : INotifyPropertyChanged
     public ItemAction Action { get; init; } = ItemAction.Delete;
     public string? UninstallUri { get; init; }
     public string? UninstallLabel { get; init; }
+    public string? Command { get; init; }
+    public string? CommandArgs { get; init; }
+    public bool CommandElevated { get; init; }
+    /// <summary>For RunCommand items: the file whose disappearance means the space was freed.</summary>
+    public string? CommandFrees { get; init; }
     public bool Suggested { get; init; }
     public string Source { get; init; } = "";
     public string Glyph { get; init; } = "";
