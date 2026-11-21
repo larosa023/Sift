@@ -260,6 +260,7 @@ internal sealed class SmokeTest
         File.SetLastWriteTimeUtc(old, DateTime.UtcNow.AddYears(-2));
         File.WriteAllText(Path.Combine(fx, "c", "notes.txt"), "hello");
 
+        vm.CurrentPage = Page.Overview;
         await ov.ScanAsync(fx);
         Check(ov.Root?.FileCount == 5, $"fixture scan ({ov.ScanSummary})");
 
@@ -324,9 +325,14 @@ internal sealed class SmokeTest
         vm.Review.ConfirmCommand.Execute(null);
         for (int i = 0; i < 100 && (vm.Review.IsWorking || !vm.Review.CanUndo); i++) await Task.Delay(100);
         Check(!File.Exists(victim) && vm.Review.CanUndo, "recycled (undo available)");
+        vm.CurrentPage = Page.Review;
+        await Snap("review-before-undo");
         await vm.Review.UndoAsync();
         Write($"     undo: {vm.Review.ResultText}");
         Check(File.Exists(victim), "undo restored the file from the Recycle Bin");
+        vm.CurrentPage = Page.Review;
+        await Snap("review-undo");
+        vm.CurrentPage = Page.Overview;
         vm.Review.ClearCommand.Execute(null);
 
         try { Directory.Delete(fx, true); } catch { /* ignore */ }

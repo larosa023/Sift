@@ -27,6 +27,7 @@
         <!-- Totals + actions -->
         <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0,16,0,14" Padding="18,14"
                 Visibility="{Binding IsEmpty, Converter={StaticResource NotBoolVis}}">
+            <StackPanel>
             <DockPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button Style="{StaticResource GhostButton}" Content="Remove checked from list" Command="{Binding RemoveCheckedCommand}" Margin="0,0,6,0"/>
@@ -44,22 +45,28 @@
                         <TextBlock Style="{StaticResource Dim}">
                             <Run Text="{Binding CheckedCount, Mode=OneWay}"/><Run Text=" item(s) checked"/>
                         </TextBlock>
-                        <StackPanel Orientation="Horizontal" Visibility="{Binding ResultText, Converter={StaticResource NullVis}}">
-                            <TextBlock Text="{Binding ResultText}" Foreground="{DynamicResource SuccessBrush}" FontSize="12.5" VerticalAlignment="Center"/>
-                            <Button Style="{StaticResource LinkButton}" Margin="12,0,0,0" FontSize="12.5" Command="{Binding UndoCommand}"
-                                    Visibility="{Binding CanUndo, Converter={StaticResource BoolVis}}"
-                                    ToolTip="Put everything this cleanup moved to the Recycle Bin back where it was">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Style="{StaticResource Glyph}" Text="&#xE7A7;" FontSize="11" Foreground="{DynamicResource AccentForegroundBrush}"/>
-                                    <TextBlock Text="Undo" Margin="5,0,0,0" FontWeight="SemiBold"/>
-                                </StackPanel>
-                            </Button>
-                        </StackPanel>
                         <TextBlock Text="{Binding ProgressText}" Style="{StaticResource Dim}"
                                    Visibility="{Binding ProgressText, Converter={StaticResource NullVis}}"/>
                     </StackPanel>
                 </StackPanel>
             </DockPanel>
+            <!-- What the last run did, with Undo -->
+            <Border Margin="0,12,0,0" Padding="12,8" CornerRadius="8" Background="{DynamicResource SuccessSoftBrush}"
+                    Visibility="{Binding ResultText, Converter={StaticResource NullVis}}">
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Command="{Binding UndoCommand}" Margin="12,0,0,0" Padding="12,5"
+                            Visibility="{Binding CanUndo, Converter={StaticResource BoolVis}}"
+                            ToolTip="Put everything this cleanup moved to the Recycle Bin back where it was (Ctrl+Z)">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Glyph}" Text="&#xE7A7;" FontSize="12"/>
+                            <TextBlock Text="Undo" Margin="8,0,0,0" FontWeight="SemiBold"/>
+                        </StackPanel>
+                    </Button>
+                    <TextBlock Style="{StaticResource Glyph}" Text="&#xE73E;" FontSize="13" Foreground="{DynamicResource SuccessBrush}" Margin="0,0,10,0"/>
+                    <TextBlock Text="{Binding ResultText}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                </DockPanel>
+            </Border>
+            </StackPanel>
         </Border>
 
         <Grid Grid.Row="2">
@@ -90,46 +97,46 @@
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="Item" Width="380">
+                            <GridViewColumn Header="Item" Width="310">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <DockPanel ToolTip="{Binding Path}">
                                             <TextBlock DockPanel.Dock="Left" Style="{StaticResource Glyph}" Text="{Binding Glyph}" FontSize="14"
                                                        Foreground="{DynamicResource TextDimBrush}" Margin="0,0,10,0"/>
                                             <StackPanel>
-                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxWidth="330" HorizontalAlignment="Left"/>
-                                                <TextBlock Text="{Binding Path}" Style="{StaticResource Faint}" MaxWidth="330" HorizontalAlignment="Left"/>
+                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxWidth="260" HorizontalAlignment="Left"/>
+                                                <TextBlock Text="{Binding Path}" Style="{StaticResource Faint}" MaxWidth="260" HorizontalAlignment="Left"/>
                                             </StackPanel>
                                         </DockPanel>
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="Size" Width="90">
+                            <GridViewColumn Header="Size" Width="84">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBlock Text="{Binding SizeText}" FontWeight="SemiBold"/>
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="From" Width="90">
+                            <GridViewColumn Header="From" Width="84">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBlock Text="{Binding Source}" Foreground="{DynamicResource TextDimBrush}"/>
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="Action" Width="140">
+                            <GridViewColumn Header="Action" Width="130">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBlock Text="{Binding ActionText}" Foreground="{DynamicResource TextDimBrush}" TextTrimming="CharacterEllipsis"/>
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>
-                            <GridViewColumn Header="Status" Width="220">
+                            <GridViewColumn Header="Status" Width="190">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBlock Text="{Binding StatusText}" Foreground="{Binding Status, Converter={StaticResource StatusBrush}}"
-                                                   TextTrimming="CharacterEllipsis" MaxWidth="210" ToolTip="{Binding StatusText}"/>
+                                                   TextTrimming="CharacterEllipsis" MaxWidth="180" ToolTip="{Binding StatusText}"/>
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
                             </GridViewColumn>

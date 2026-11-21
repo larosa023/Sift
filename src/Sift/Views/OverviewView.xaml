@@ -260,7 +260,7 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" MinWidth="320"/>
                     <ColumnDefinition Width="14"/>
-                    <ColumnDefinition x:Name="ListColumn" Width="420" MinWidth="300"/>
+                    <ColumnDefinition x:Name="ListColumn" Width="440" MinWidth="320"/>
                 </Grid.ColumnDefinitions>
 
                 <!-- Treemap + legend -->
@@ -371,7 +371,7 @@
                                       GridViewColumnHeader.Click="Header_Click">
                                 <ListView.View>
                                     <GridView>
-                                        <GridViewColumn Width="176">
+                                        <GridViewColumn Width="158">
                                             <GridViewColumn.Header>
                                                 <TextBlock Text="{Binding NameHeader}" Tag="Name"/>
                                             </GridViewColumn.Header>
@@ -380,15 +380,15 @@
                                                     <DockPanel ToolTip="{Binding Tip}">
                                                         <TextBlock DockPanel.Dock="Left" Style="{StaticResource Glyph}" Text="{Binding Glyph}" FontSize="13" Foreground="{Binding Accent}" VerticalAlignment="Top" Margin="0,1,0,0"/>
                                                         <StackPanel Margin="8,0,0,0">
-                                                            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" MaxWidth="140" HorizontalAlignment="Left"/>
-                                                            <TextBlock Text="{Binding Location}" Style="{StaticResource Faint}" FontSize="11" MaxWidth="140" HorizontalAlignment="Left"
+                                                            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" MaxWidth="124" HorizontalAlignment="Left"/>
+                                                            <TextBlock Text="{Binding Location}" Style="{StaticResource Faint}" FontSize="11" MaxWidth="124" HorizontalAlignment="Left"
                                                                        Visibility="{Binding HasLocation, Converter={StaticResource BoolVis}}"/>
                                                         </StackPanel>
                                                     </DockPanel>
                                                 </DataTemplate>
                                             </GridViewColumn.CellTemplate>
                                         </GridViewColumn>
-                                        <GridViewColumn Width="76">
+                                        <GridViewColumn Width="82">
                                             <GridViewColumn.Header>
                                                 <TextBlock Text="{Binding SizeHeader}" Tag="Size"/>
                                             </GridViewColumn.Header>
@@ -407,18 +407,18 @@
                                                 </DataTemplate>
                                             </GridViewColumn.CellTemplate>
                                         </GridViewColumn>
-                                        <GridViewColumn Header="Share" Width="86">
+                                        <GridViewColumn Header="Share" Width="74">
                                             <GridViewColumn.CellTemplate>
                                                 <DataTemplate>
                                                     <StackPanel>
                                                         <TextBlock Text="{Binding PercentText}" FontSize="11" Foreground="{DynamicResource TextDimBrush}"/>
-                                                        <ProgressBar Value="{Binding Percent, Mode=OneWay}" Maximum="100" Height="4" Width="70"
+                                                        <ProgressBar Value="{Binding Percent, Mode=OneWay}" Maximum="100" Height="4" Width="60"
                                                                      HorizontalAlignment="Left" Margin="0,3,0,0" Foreground="{Binding Accent}"/>
                                                     </StackPanel>
                                                 </DataTemplate>
                                             </GridViewColumn.CellTemplate>
                                         </GridViewColumn>
-                                        <GridViewColumn Width="94">
+                                        <GridViewColumn Width="88">
                                             <GridViewColumn.Header>
                                                 <TextBlock Text="{Binding ModifiedHeader}" Tag="Modified"/>
                                             </GridViewColumn.Header>

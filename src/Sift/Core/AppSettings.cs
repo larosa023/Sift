@@ -35,7 +35,7 @@ public sealed class AppSettings
     /// <summary>"Analyze with Sift" on folders and drives in File Explorer.</summary>
     public bool ExplorerMenu { get; set; }
     public bool SearchSubfolders { get; set; } = true;
-    public double ListPaneWidth { get; set; } = 420;
+    public double ListPaneWidth { get; set; } = 440;
     public string? SkippedVersion { get; set; }
     public string? LastTarget { get; set; }
     /// <summary>Most recent first.</summary>

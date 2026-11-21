@@ -14,7 +14,9 @@ public sealed class ReviewItem : ObservableObject
     public required string Title { get; init; }
     public long Size { get; init; }
     public string Source { get; init; } = "";
-    public string Glyph { get; init; } = "";
+    private string? _glyph;
+    /// <summary>Folder or file icon; worked out from the path when the caller doesn't say.</summary>
+    public string Glyph { get => _glyph ??= Directory.Exists(Path) ? "\uE8B7" : "\uE8A5"; init => _glyph = value; }
     public ItemAction Action { get; init; } = ItemAction.Delete;
     public string? UninstallUri { get; init; }
     public string? UninstallLabel { get; init; }

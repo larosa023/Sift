@@ -154,7 +154,7 @@ jobs:
           tag_name: ${{ steps.rel.outputs.tag }}
           target_commitish: ${{ github.sha }}
           name: Sift ${{ steps.ver.outputs.version }}
-          generate_release_notes: true
+          body_path: CHANGELOG-latest.md
           make_latest: true
           files: |
             out/Sift.exe

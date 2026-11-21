@@ -21,6 +21,9 @@ public sealed class LargeOldFilesFinder : ICleanupFinder
 
         var skip = ManagedFolders();
         var result = new List<CleanupItem>();
+        // A scan that starts inside a managed folder (e.g. Program Files\dotnet) has nothing safe to suggest.
+        var rootPath = ctx.Scan.FullPath;
+        if (skip.Any(m => FsUtil.IsUnder(rootPath, m))) return result;
         var stack = new Stack<FileNode>();
         stack.Push(ctx.Scan);
         while (stack.Count > 0)
