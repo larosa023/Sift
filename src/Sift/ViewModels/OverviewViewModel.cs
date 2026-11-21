@@ -59,10 +59,13 @@ public sealed class NodeRow
     /// <summary>1 grew, -1 shrank, 0 no change shown.</summary>
     public int DeltaSign => Delta is long d && Math.Abs(d) >= 1024 ? Math.Sign(d) : 0;
     public bool HasDelta => DeltaSign != 0;
+    /// <summary>Under the size: the change ("+1.2 GB"), or in the Changes view what kind of change it was.</summary>
     public string DeltaText => Kind switch
     {
-        ChangeKind.Added => "new · +" + Format.Bytes(Delta ?? 0),
-        ChangeKind.Removed => "removed · −" + Format.Bytes(-(Delta ?? 0)),
+        ChangeKind.Added => "new",
+        ChangeKind.Removed => "removed",
+        ChangeKind.Grew => "grew",
+        ChangeKind.Shrank => "shrank",
         _ => Delta is long d ? (d >= 0 ? "+" : "−") + Format.Bytes(Math.Abs(d)) : "",
     };
     public bool IsRemoved => Kind == ChangeKind.Removed;
@@ -71,7 +74,7 @@ public sealed class NodeRow
     public string Name => Node.Name;
     public string Location { get; }
     public bool HasLocation => Location.Length > 0;
-    public string SizeText => Format.Bytes(_size);
+    public string SizeText => Kind is not null && Delta is long d ? (d >= 0 ? "+" : "−") + Format.Bytes(Math.Abs(d)) : Format.Bytes(_size);
     public double Percent { get; }
     public string PercentText => Percent >= 10 ? $"{Percent:0}%" : Percent >= 0.1 ? $"{Percent:0.0}%" : "<0.1%";
     public string ItemsText => Node.IsDirectory ? Format.Count(Node.FileCount) : "";
@@ -79,7 +82,8 @@ public sealed class NodeRow
     public string Glyph => IsTypeRow ? "\uE8FD" : Node.IsDirectory ? "\uE8B7" : "\uE8A5";
     public Brush Accent => Node.IsDirectory ? CategoryPalette.SolidBrush(FileCategory.Folder) : CategoryPalette.SolidBrush(Node.Category);
     public bool IsDirectory => Node.IsDirectory;
-    public string Tip => (HasLocation ? $"{Node.Name}\n{Location}" : Node.Name) + (HasDelta ? $"\n{DeltaText} since the previous scan" : "");
+    public string Tip => (HasLocation ? $"{Node.Name}\n{Location}" : Node.Name)
+        + (HasDelta ? $"\n{(Kind is null ? DeltaText : SizeText)} since the previous scan" : "");
 }
 
 /// <summary>One legend entry: a file category, or an age bucket when colouring by age.</summary>
@@ -782,12 +786,13 @@ public sealed class OverviewViewModel : ObservableObject
     public string CacheText => IsFromCache ? $"Showing your saved scan from {Format.Age(_scannedUtc)} ({Format.Date(_scannedUtc)}). Rescan (F5) for fresh results." : "";
 
     public bool HasCompare => _compare is not null;
-    public string CompareText => _compare is null ? "" : $"vs. {Format.Date(_compare.ThenUtc)}";
+    public string CompareText => _compare is null ? "" : $"Changes since your scan on {Format.Date(_compare.ThenUtc)}";
+    public string CompareDate => _compare is null ? "" : $"{Format.Date(_compare.ThenUtc)} ({Format.Age(_compare.ThenUtc)})";
 
     private void SetCompare(ScanCompare? c)
     {
         _compare = c;
-        Raise(nameof(HasCompare), nameof(CompareText));
+        Raise(nameof(HasCompare), nameof(CompareText), nameof(CompareDate));
         if (c is null && Mode == ListMode.Changes) Mode = ListMode.Contents;
     }
 
